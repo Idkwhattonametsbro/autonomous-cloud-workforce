@@ -165,6 +165,17 @@ def make_event_callback(agent_inst: AgentInstance):
                     logger.warning(f"Self-improvement analysis failed: {e}")
             elif event_type == "iteration_error":
                 agent_inst.status = "error"
+            elif event_type == "connection_needed":
+                # Relay to frontend — show connection request bubble
+                socketio.emit("info_request", {
+                    "task": agent_inst.goal,
+                    "pattern": data.get("tool", ""),
+                    "requests": data.get("required_fields", []),
+                    "security_note": data.get("message", "Your data is stored locally and encrypted."),
+                    "get_link": data.get("get_link", ""),
+                    "display_name": data.get("display_name", ""),
+                    "instructions": data.get("get_instructions", ""),
+                })
 
         socketio.emit("agent_event", payload)
     return callback

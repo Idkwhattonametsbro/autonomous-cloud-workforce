@@ -265,7 +265,6 @@ class ReActAgent:
             try:
                 arguments = json.loads(tc["arguments"]) if tc.get("arguments") else {}
             except (json.JSONDecodeError, TypeError) as e:
-                # FIX: Report parse errors back to the model instead of silently using {}
                 logger.warning(f"Failed to parse arguments for {tool_name}: {e}")
                 arguments = {}
                 self._emit("tool_parse_error", {
@@ -296,6 +295,21 @@ class ReActAgent:
                 "result": result[:500] if isinstance(result, str) else json.dumps(result)[:500],
                 "elapsed_seconds": round(elapsed, 3),
             })
+
+            # CHECK: Did the tool return needs_connection?
+            try:
+                result_data = json.loads(result) if isinstance(result, str) else result
+                if isinstance(result_data, dict) and result_data.get("status") == "needs_connection":
+                    self._emit("connection_needed", {
+                        "tool": result_data.get("tool", tool_name),
+                        "display_name": result_data.get("display_name", tool_name),
+                        "message": result_data.get("message", "Connection required."),
+                        "get_link": result_data.get("get_link", ""),
+                        "get_instructions": result_data.get("get_instructions", ""),
+                        "required_fields": result_data.get("required_fields", []),
+                    })
+            except (json.JSONDecodeError, TypeError):
+                pass
 
         return results
 
