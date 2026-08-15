@@ -130,14 +130,65 @@
         .etoast{position:fixed;top:16px;left:50%;transform:translateX(-50%) translateY(-80px);background:rgba(15,23,42,.85);backdrop-filter:blur(16px);border:1px solid rgba(139,92,246,.25);border-radius:14px;padding:10px 18px;z-index:400;transition:transform .35s;max-width:350px;text-align:center}
         .etoast.show{transform:translateX(-50%) translateY(0)}
         .etoast h4{font-size:11px;font-weight:700;color:#c4b5fd;margin:0 0 2px}.etoast p{font-size:10px;color:rgba(255,255,255,.55);margin:0;line-height:1.4}
+
+        /* Typing indicator */
+        .typing{display:flex;gap:4px;padding:8px 13px;align-items:center}
+        .typing-dot{width:6px;height:6px;border-radius:50%;background:var(--txt);opacity:.4;animation:typingBounce 1.4s infinite}
+        .typing-dot:nth-child(2){animation-delay:.2s}
+        .typing-dot:nth-child(3){animation-delay:.4s}
+        @keyframes typingBounce{0%,60%,100%{transform:translateY(0);opacity:.4}30%{transform:translateY(-6px);opacity:1}}
+
+        /* Sidebar */
+        .sidebar{position:fixed;top:0;left:-300px;width:280px;height:100%;background:var(--glass);backdrop-filter:blur(30px);-webkit-backdrop-filter:blur(30px);border-right:1px solid var(--glassb);z-index:100;transition:left .3s ease;overflow-y:auto;padding:20px}
+        .sidebar.open{left:0}
+        .sidebar-overlay{position:fixed;inset:0;background:rgba(0,0,0,.3);z-index:99;opacity:0;pointer-events:none;transition:opacity .3s}
+        .sidebar-overlay.active{opacity:1;pointer-events:all}
+        .sidebar-section{margin-bottom:20px}
+        .sidebar-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;opacity:.5;margin-bottom:10px}
+        .sidebar-item{padding:10px 12px;border-radius:10px;cursor:pointer;font-size:13px;transition:background .15s;display:flex;align-items:center;gap:10px}
+        .sidebar-item:hover{background:rgba(128,128,128,.08)}
+        .sidebar-item.active{background:rgba(139,92,246,.1);color:#8b5cf6}
+        .chat-history-item{padding:8px 12px;border-radius:8px;cursor:pointer;font-size:12px;opacity:.7;transition:all .15s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+        .chat-history-item:hover{background:rgba(128,128,128,.08);opacity:1}
     </style>
 </head>
 <body>
 <div class="ambient"></div>
+
+<!-- SIDEBAR -->
+<div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
+<div class="sidebar" id="sidebar">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+        <h2 style="font-size:18px;font-weight:700">Agent</h2>
+        <button onclick="toggleSidebar()" style="width:30px;height:30px;border-radius:8px;background:rgba(128,128,128,.08);border:none;cursor:pointer;font-size:14px"><i class="fa-solid fa-times"></i></button>
+    </div>
+    
+    <div class="sidebar-section">
+        <div class="sidebar-title">Chat History</div>
+        <div id="chatHistory">
+            <div class="chat-history-item">No history yet</div>
+        </div>
+    </div>
+    
+    <div class="sidebar-section">
+        <div class="sidebar-title">Skills</div>
+        <div class="sidebar-item" onclick="showSkills()"><i class="fa-solid fa-list"></i> View All Skills</div>
+        <div class="sidebar-item" onclick="toggleConn()"><i class="fa-solid fa-link"></i> Manage Connections</div>
+    </div>
+    
+    <div class="sidebar-section">
+        <div class="sidebar-title">Agent Info</div>
+        <div class="sidebar-item" onclick="showAgentInfo()"><i class="fa-solid fa-info-circle"></i> About This Agent</div>
+        <div class="sidebar-item" onclick="showProgress()"><i class="fa-solid fa-chart-line"></i> Performance</div>
+    </div>
+</div>
+
 <div class="app">
     <!-- HEADER -->
     <header class="flex justify-between items-center px-5 pt-4 pb-2 z-20">
-        <div style="width:38px"></div>
+        <button onclick="toggleSidebar()" class="w-9 h-9 rounded-full glass flex items-center justify-center text-sm active:scale-95 transition-transform">
+            <i class="fa-solid fa-bars"></i>
+        </button>
         <div class="glass rounded-full p-1 flex gap-1 text-sm font-semibold">
             <button id="btn-chat" class="px-5 py-1.5 rounded-full bg-white/60 shadow-sm transition-all" onclick="switchView('chat')">Chat</button>
             <button id="btn-preview" class="px-5 py-1.5 rounded-full opacity-50 transition-all" onclick="switchView('preview')">Preview</button>
@@ -260,7 +311,7 @@ const INTEGRATIONS = [
 socket.on('connect',()=>{addFeed('system','fa-plug','Connected','Link established','',false)});
 socket.on('state_update',d=>{updateOrb(d.status)});
 socket.on('agent_event',p=>{evtN++;document.getElementById('evtCount').textContent=evtN;handleEvt(p)});
-socket.on('chat_response',d=>{addMsg('a',d.content)});
+socket.on('chat_response',d=>{hideTyping();addMsg('a',d.content)});
 socket.on('info_request',d=>{showConnRequest(d)});
 socket.on('self_improvement',d=>{showEvolve(d)});
 socket.on('confirm_action',d=>{showConfirm(d)});
@@ -373,8 +424,33 @@ inp.addEventListener('keypress',e=>{if(e.key==='Enter'&&inp.value.trim())handleA
 
 function handleAction(){
     const m=inp.value.trim();
-    if(m){addMsg('u',m);socket.emit('send_chat',{message:m});inp.value='';micIcon.className='fa-solid fa-microphone';micBtn.classList.remove('has-text')}
+    if(m){
+        addMsg('u',m);
+        showTyping();
+        socket.emit('send_chat',{message:m});
+        inp.value='';
+        micIcon.className='fa-solid fa-microphone';
+        micBtn.classList.remove('has-text');
+    }
     else{toggleVoice()}
+}
+
+function showTyping(){
+    const c=document.getElementById('msgs');
+    const existing=c.querySelector('.typing-msg');
+    if(existing)existing.remove();
+    
+    const m=document.createElement('div');
+    m.className='msg a typing-msg';
+    m.innerHTML=`<div class="msg-av"><i class="fa-solid fa-robot"></i></div><div class="msg-b"><div class="typing"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div></div>`;
+    c.appendChild(m);
+    c.scrollTop=c.scrollHeight;
+}
+
+function hideTyping(){
+    const c=document.getElementById('msgs');
+    const t=c.querySelector('.typing-msg');
+    if(t)t.remove();
 }
 function toggleVoice(){
     const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
@@ -416,6 +492,7 @@ function handleFiles(files){
         // Read file and send to agent
         const reader=new FileReader();
         reader.onload=e=>{
+            showTyping();
             socket.emit('send_chat',{message:`[File: ${f.name}]\n${e.target.result}`});
         };
         if(f.type.startsWith('text/')||f.name.endsWith('.json')||f.name.endsWith('.csv')||f.name.endsWith('.md')){
@@ -426,6 +503,35 @@ function handleFiles(files){
         }
     });
     document.getElementById('file-input').value='';
+}
+
+// ═══ SIDEBAR ═══
+function toggleSidebar(){
+    const sidebar=document.getElementById('sidebar');
+    const overlay=document.getElementById('sidebarOverlay');
+    sidebar.classList.toggle('open');
+    overlay.classList.toggle('active');
+}
+
+function showSkills(){
+    toggleSidebar();
+    addMsg('a','**Available Skills:**\n\n• Web browsing & research\n• File management\n• Progress tracking\n• Email integration (needs connection)\n• CRM management (needs connection)\n• Database queries (needs connection)\n• Payment processing (needs connection)\n• Code generation & execution\n\nConnect tools via the link button to unlock more capabilities.');
+    switchView('chat');
+}
+
+function showAgentInfo(){
+    toggleSidebar();
+    addMsg('a','**About This Agent:**\n\nI\'m an autonomous AI agent powered by the ReAct framework. I can browse the web, manage files, track progress on complex goals, and integrate with various services.\n\n**Models:** Llama 3.3 70B (Groq) + Gemini 2.5 Flash\n\n**Current Status:** Learning & improving with each interaction\n\n**Privacy:** All data stays local and encrypted. I only use credentials you explicitly provide.');
+    switchView('chat');
+}
+
+function showProgress(){
+    toggleSidebar();
+    fetch('/api/self-improve/status').then(r=>r.json()).then(d=>{
+        const p=d.performance||{};
+        addMsg('a',`**Performance Stats:**\n\n• Total runs: ${p.total_runs||0}\n• Success rate: ${p.success_rate||'N/A'}\n• Avg duration: ${p.avg_duration||'N/A'}\n• Stage: ${p.evolution_stage||'Initial'}\n\nI'm continuously learning and improving my strategies.`);
+        switchView('chat');
+    }).catch(e=>addMsg('a','Could not fetch performance data.'));
 }
 </script>
 </body>
