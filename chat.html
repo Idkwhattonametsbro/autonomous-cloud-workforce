@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Autonomous Agent</title>
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#020617">
+    <link rel="manifest" href="/manifest.json">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
+
+    <style>
+        :root {
+            --bg-base: #f0f4ff;
+            --bg-gradient-1: #c4b5fd;
+            --bg-gradient-2: #fbcfe8;
+            --glass-bg: rgba(255, 255, 255, 0.45);
+            --glass-border: rgba(255, 255, 255, 0.6);
+            --text-main: #1e293b;
+            --orb-color-1: #8b5cf6;
+            --orb-color-2: #3b82f6;
+        }
+        .dark-mode {
+            --bg-base: #020617;
+            --bg-gradient-1: #1e1b4b;
+            --bg-gradient-2: #0f172a;
+            --glass-bg: rgba(15, 23, 42, 0.5);
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --text-main: #f8fafc;
+            --orb-color-1: #c4b5fd;
+            --orb-color-2: #60a5fa;
+        }
+        * { -webkit-tap-highlight-color: transparent; }
+        body {
+            background-color: var(--bg-base);
+            color: var(--text-main);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            overflow: hidden;
+            transition: background-color 0.4s ease, color 0.4s ease;
+            margin: 0; height: 100vh; display: flex; justify-content: center;
+        }
+        .ambient-bg {
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 0;
+            background: radial-gradient(circle at 20% 40%, var(--bg-gradient-1) 0%, transparent 60%),
+                        radial-gradient(circle at 80% 60%, var(--bg-gradient-2) 0%, transparent 60%);
+            filter: blur(70px); opacity: 0.8; transition: all 0.5s ease;
+        }
+        .glass {
+            background: var(--glass-bg); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+            border: 1px solid var(--glass-border); box-shadow: 0 8px 32px rgba(0,0,0,0.05);
+        }
+        .glass-modal {
+            background: rgba(255,255,255,0.7); backdrop-filter: blur(30px); -webkit-backdrop-filter: blur(30px);
+            border: 1px solid rgba(255,255,255,0.5);
+        }
+        .dark-mode .glass-modal { background: rgba(15,23,42,0.8); border: 1px solid rgba(255,255,255,0.1); }
+
+        .orb-container { position: relative; width: 130px; height: 130px; margin: 0 auto; display: flex; justify-content: center; align-items: center; }
+        .orb {
+            width: 100%; height: 100%; border-radius: 50%;
+            background: linear-gradient(135deg, var(--orb-color-1), var(--orb-color-2));
+            box-shadow: 0 0 35px var(--orb-color-1), inset 0 0 20px rgba(255,255,255,0.3);
+            animation: breathe 5s ease-in-out infinite;
+            display: flex; justify-content: center; align-items: center; gap: 12px;
+            transition: box-shadow 0.4s ease; will-change: transform;
+        }
+        .orb.thinking { animation: breathe 2s ease-in-out infinite; box-shadow: 0 0 50px var(--orb-color-1), inset 0 0 20px rgba(255,255,255,0.3); }
+        .orb.executing { animation: breathe 1s ease-in-out infinite; box-shadow: 0 0 60px #f59e0b, inset 0 0 20px rgba(255,255,255,0.3); }
+        .orb-eyes { width: 12px; height: 24px; background: white; border-radius: 12px; box-shadow: 0 0 10px rgba(255,255,255,0.8); }
+        @keyframes breathe { 0%,100%{transform:scale(1)} 50%{transform:scale(1.04)} }
+
+        .app-layout { width: 100%; max-width: 500px; height: 100%; display: flex; flex-direction: column; position: relative; z-index: 10; }
+        .content-area { flex: 1; position: relative; overflow: hidden; }
+        .tab-section {
+            position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+            display: flex; flex-direction: column; opacity: 0; pointer-events: none;
+            transition: opacity 0.35s ease; overflow-y: auto; padding-bottom: 20px;
+            -webkit-overflow-scrolling: touch;
+        }
+        .tab-section.active { opacity: 1; pointer-events: all; }
+        .modal-overlay {
+            position: absolute; inset: 0; z-index: 50; background: rgba(0,0,0,0.1);
+            opacity: 0; pointer-events: none; transition: opacity 0.3s ease;
+            display: flex; justify-content: center; align-items: center; padding: 20px;
+        }
+        .modal-overlay.active { opacity: 1; pointer-events: all; }
+        .dark-mode .modal-overlay { background: rgba(0,0,0,0.4); }
+
+        /* Feed */
+        .live-feed { padding: 0 20px; margin-top: 12px; display: flex; flex-direction: column; gap: 8px; max-height: 35vh; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+        .live-feed::-webkit-scrollbar { width: 3px; }
+        .live-feed::-webkit-scrollbar-thumb { background: var(--glass-border); border-radius: 4px; }
+        .feed-item {
+            background: var(--glass-bg); backdrop-filter: blur(16px); border: 1px solid var(--glass-border);
+            border-radius: 16px; overflow: hidden; transition: all 0.25s ease;
+            animation: feedIn 0.25s ease; will-change: transform, opacity;
+        }
+        @keyframes feedIn { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
+        .feed-header { padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; user-select: none; }
+        .feed-header-left { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }
+        .feed-icon { width: 28px; height: 28px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 12px; flex-shrink: 0; }
+        .feed-icon.think{background:rgba(139,92,246,0.15);color:#8b5cf6} .feed-icon.action{background:rgba(245,158,11,0.15);color:#f59e0b}
+        .feed-icon.observe{background:rgba(6,182,212,0.15);color:#06b6d4} .feed-icon.complete{background:rgba(16,185,129,0.15);color:#10b981}
+        .feed-icon.error{background:rgba(239,68,68,0.15);color:#ef4444} .feed-icon.system{background:rgba(59,130,246,0.15);color:#3b82f6}
+        .feed-label { font-size: 13px; font-weight: 600; }
+        .feed-time { font-size: 10px; opacity: 0.5; flex-shrink: 0; }
+        .feed-chevron { font-size: 11px; opacity: 0.4; transition: transform 0.25s ease; }
+        .feed-item.expanded .feed-chevron { transform: rotate(180deg); }
+        .feed-detail { max-height: 0; overflow: hidden; transition: max-height 0.3s ease, padding 0.3s ease; padding: 0 16px; }
+        .feed-item.expanded .feed-detail { max-height: 250px; padding: 0 16px 14px; }
+        .feed-detail-content { font-size: 11px; opacity: 0.7; line-height: 1.6; font-family: 'SF Mono','Fira Code',monospace; white-space: pre-wrap; word-break: break-all; background: rgba(0,0,0,0.06); border-radius: 8px; padding: 10px 12px; }
+        .dark-mode .feed-detail-content { background: rgba(255,255,255,0.04); }
+        .feed-tag { display:inline-block; padding:2px 7px; border-radius:4px; font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:.04em }
+        .tag-tool{background:rgba(245,158,11,0.12);color:#f59e0b} .tag-model{background:rgba(59,130,246,0.12);color:#3b82f6} .tag-ok{background:rgba(16,185,129,0.12);color:#10b981} .tag-phase{background:rgba(139,92,246,0.12);color:#8b5cf6}
+
+        .orb-status { text-align: center; margin-top: 10px; font-size: 12px; font-weight: 500; opacity: 0.6; }
+
+        /* Chat messages */
+        .chat-messages { display: flex; flex-direction: column; gap: 10px; padding: 0 20px; margin-bottom: 12px; max-height: 28vh; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+        .chat-messages::-webkit-scrollbar { width: 3px; } .chat-messages::-webkit-scrollbar-thumb { background: var(--glass-border); border-radius: 4px; }
+        .chat-msg { display: flex; gap: 8px; animation: feedIn 0.2s ease; }
+        .chat-msg.user { flex-direction: row-reverse; }
+        .chat-avatar { width: 28px; height: 28px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 12px; flex-shrink: 0; }
+        .chat-msg.user .chat-avatar { background: rgba(59,130,246,0.12); color: #3b82f6; }
+        .chat-msg.assistant .chat-avatar { background: rgba(139,92,246,0.12); color: #8b5cf6; }
+        .chat-bubble { max-width: 80%; padding: 9px 14px; border-radius: 14px; font-size: 13px; line-height: 1.5; }
+        .chat-msg.user .chat-bubble { background: rgba(59,130,246,0.08); border: 1px solid rgba(59,130,246,0.12); border-bottom-right-radius: 4px; }
+        .chat-msg.assistant .chat-bubble { background: var(--glass-bg); border: 1px solid var(--glass-border); border-bottom-left-radius: 4px; }
+
+        /* FULLSCREEN GRAPH */
+        .graph-fullscreen {
+            position: fixed; inset: 0; z-index: 500; background: var(--bg-base);
+            opacity: 0; pointer-events: none; transition: opacity 0.3s ease;
+        }
+        .graph-fullscreen.active { opacity: 1; pointer-events: all; }
+        .graph-fullscreen-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; }
+        .graph-fullscreen-container { position: absolute; top: 60px; left: 0; right: 0; bottom: 0; }
+        .graph-back-btn { width: 42px; height: 42px; border-radius: 50%; background: var(--glass-bg); border: 1px solid var(--glass-border); display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--text-main); font-size: 16px; backdrop-filter: blur(12px); }
+        .graph-expand-btn { width: 32px; height: 32px; border-radius: 8px; background: var(--glass-bg); border: 1px solid var(--glass-border); display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--text-main); font-size: 12px; backdrop-filter: blur(12px); transition: transform 0.15s; }
+        .graph-expand-btn:active { transform: scale(0.9); }
+
+        /* Input bar — FIXED mic button */
+        .action-btn-fixed {
+            width: 48px; height: 48px; border-radius: 50%;
+            background: var(--glass-bg); backdrop-filter: blur(12px);
+            border: 1.5px solid var(--glass-border);
+            display: flex; align-items: center; justify-content: center;
+            color: #8b5cf6; font-size: 18px; cursor: pointer;
+            transition: all 0.2s ease; flex-shrink: 0;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+        }
+        .action-btn-fixed:active { transform: scale(0.92); }
+        .action-btn-fixed.has-text { color: #3b82f6; background: rgba(59,130,246,0.1); border-color: rgba(59,130,246,0.2); }
+        .action-btn-fixed.voice-active { color: #ef4444; animation: voicePulse 0.8s ease-in-out infinite; }
+        @keyframes voicePulse { 0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,0.3)} 50%{box-shadow:0 0 0 8px rgba(239,68,68,0)} }
+
+        /* Info modal */
+        .info-modal-overlay { position:fixed; inset:0; z-index:200; background:rgba(0,0,0,0.15); opacity:0; pointer-events:none; transition:opacity 0.3s; display:flex; justify-content:center; align-items:flex-end; padding:20px }
+        .dark-mode .info-modal-overlay{background:rgba(0,0,0,0.5)} .info-modal-overlay.active{opacity:1;pointer-events:all}
+        .info-modal { background:rgba(255,255,255,0.75); backdrop-filter:blur(30px); border:1px solid rgba(255,255,255,0.5); border-radius:24px; padding:24px; width:100%; max-width:460px; box-shadow:0 20px 60px rgba(0,0,0,0.15); transform:translateY(20px); transition:transform 0.3s }
+        .dark-mode .info-modal{background:rgba(15,23,42,0.85);border:1px solid rgba(255,255,255,0.1)} .info-modal-overlay.active .info-modal{transform:translateY(0)}
+        .info-field{margin-bottom:14px} .info-field label{display:block;font-size:12px;font-weight:600;margin-bottom:5px;opacity:0.8}
+        .info-field input,.info-field textarea,.info-field select{width:100%;padding:10px 14px;border-radius:12px;border:1px solid rgba(128,128,128,0.2);background:rgba(128,128,128,0.06);font-size:13px;color:var(--text-main);outline:none;transition:border-color 0.2s;font-family:inherit}
+        .info-field input:focus,.info-field textarea:focus{border-color:#8b5cf6} .info-field textarea{resize:vertical;min-height:60px} .info-field .help-text{font-size:10px;opacity:0.5;margin-top:3px}
+        .info-security{display:flex;align-items:flex-start;gap:10px;padding:12px;border-radius:12px;background:rgba(16,185,129,0.06);border:1px solid rgba(16,185,129,0.12);margin-bottom:16px}
+        .info-security i{color:#10b981;font-size:14px;margin-top:1px;flex-shrink:0} .info-security p{font-size:11px;line-height:1.5;opacity:0.7;margin:0}
+        .info-submit{width:100%;padding:12px;border-radius:14px;border:none;background:linear-gradient(135deg,#8b5cf6,#3b82f6);color:white;font-size:14px;font-weight:600;cursor:pointer;transition:transform 0.15s,box-shadow 0.2s}
+        .info-submit:hover{transform:translateY(-1px);box-shadow:0 8px 20px rgba(139,92,246,0.3)} .info-submit:active{transform:scale(0.98)}
+
+        /* Evolve toast */
+        .evolve-toast{position:fixed;top:20px;left:50%;transform:translateX(-50%) translateY(-100px);background:rgba(15,23,42,0.85);backdrop-filter:blur(20px);border:1px solid rgba(139,92,246,0.3);border-radius:16px;padding:14px 20px;z-index:300;transition:transform 0.4s ease;max-width:400px;text-align:center}
+        .evolve-toast.show{transform:translateX(-50%) translateY(0)} .evolve-toast h4{font-size:12px;font-weight:700;color:#c4b5fd;margin:0 0 4px} .evolve-toast p{font-size:11px;color:rgba(255,255,255,0.6);margin:0;line-height:1.4}
+
+        /* Timeline */
+        .timeline{display:flex;flex-direction:column;gap:4px;padding:0 20px;margin-top:8px}
+        .tl-row{display:flex;align-items:center;gap:8px;font-size:10px}
+        .tl-label{width:60px;text-align:right;opacity:0.5;flex-shrink:0}
+        .tl-bar-wrap{flex:1;height:14px;background:rgba(128,128,128,0.08);border-radius:4px;overflow:hidden}
+        .tl-bar{height:100%;border-radius:4px;background:linear-gradient(90deg,#8b5cf6,#3b82f6);transition:width 0.5s ease;min-width:2px}
+        .tl-time{width:40px;font-size:9px;opacity:0.4}
+    </style>
+</head>
+<body>
+    <div class="ambient-bg"></div>
+    <div class="app-layout">
+
+        <!-- HEADER -->
+        <header class="flex justify-between items-center p-5 z-20">
+            <button onclick="toggleSettings()" class="w-11 h-11 rounded-full glass flex items-center justify-center text-lg active:scale-95 transition-transform hover:bg-white/20">
+                <i class="fa-solid fa-bars"></i>
+            </button>
+            <div class="glass rounded-full p-1 flex gap-1 text-sm font-semibold shadow-sm">
+                <button id="btn-chat" class="px-6 py-2 rounded-full bg-white/60 dark:bg-white/20 shadow-sm transition-all" onclick="switchView('chat')">Chat</button>
+                <button id="btn-preview" class="px-6 py-2 rounded-full text-slate-500 dark:text-slate-400 hover:bg-white/30 transition-all" onclick="switchView('preview')">Preview</button>
+            </div>
+            <button onclick="toggleTheme()" class="w-11 h-11 rounded-full glass flex items-center justify-center text-lg active:scale-95 transition-transform hover:bg-white/20">
+                <i class="fa-solid fa-moon" id="theme-icon"></i>
+            </button>
+        </header>
+
+        <!-- CONTENT -->
+        <main class="content-area px-5">
+
+            <!-- CHAT TAB -->
+            <div id="chat-tab" class="tab-section active pt-4">
+                <div class="text-center mb-4">
+                    <h1 class="text-3xl font-bold mb-2 tracking-tight">Hello</h1>
+                    <p class="text-base opacity-70">What can I help you with?</p>
+                </div>
+                <div class="flex-1 flex flex-col justify-center items-center mb-4">
+                    <div class="orb-container">
+                        <div class="orb" id="agent-orb"><div class="orb-eyes"></div><div class="orb-eyes"></div></div>
+                    </div>
+                    <div class="orb-status" id="orb-status">Idle &mdash; Ready</div>
+                </div>
+                <div class="chat-messages" id="chatMessages"></div>
+            </div>
+
+            <!-- PREVIEW TAB -->
+            <div id="preview-tab" class="tab-section">
+                <div class="pb-2 text-center px-5">
+                    <h2 class="text-xl font-bold tracking-tight">Live Execution Graph</h2>
+                    <p class="text-xs opacity-60">Tap graph to expand fullscreen</p>
+                </div>
+                <div style="position:relative;margin:0 20px">
+                    <div id="network-container" class="rounded-3xl glass mt-2 shadow-inner" style="height:200px;cursor:pointer" onclick="openFullscreenGraph()"></div>
+                    <div class="graph-expand-btn" style="position:absolute;top:12px;right:12px" onclick="event.stopPropagation();openFullscreenGraph()">
+                        <i class="fa-solid fa-expand"></i>
+                    </div>
+                </div>
+                <div class="px-5 mt-4 mb-2 flex justify-between items-center">
+                    <h3 class="text-sm font-bold tracking-tight">Live Activity</h3>
+                    <span class="text-xs opacity-50" id="eventCount">0 events</span>
+                </div>
+                <div class="live-feed" id="liveFeed">
+                    <div class="text-center py-8 opacity-40 text-sm" id="feedEmpty">Launch a task to see live activity.</div>
+                </div>
+                <div class="px-5 mt-4 mb-2"><h3 class="text-sm font-bold tracking-tight">Timeline</h3></div>
+                <div class="timeline" id="timeline">
+                    <div class="text-center py-4 opacity-30 text-xs">Appears during execution.</div>
+                </div>
+            </div>
+        </main>
+
+        <!-- FULLSCREEN GRAPH -->
+        <div class="graph-fullscreen" id="graphFullscreen">
+            <div class="graph-fullscreen-header">
+                <button class="graph-back-btn" onclick="closeFullscreenGraph()"><i class="fa-solid fa-arrow-left"></i></button>
+                <span class="text-sm font-semibold">Execution Graph</span>
+                <div style="width:42px"></div>
+            </div>
+            <div class="graph-fullscreen-container" id="fullscreen-graph-container"></div>
+        </div>
+
+        <!-- SETTINGS MODAL -->
+        <div id="settings-menu" class="modal-overlay" onclick="closeModals(event)">
+            <div class="glass-modal w-full max-w-sm rounded-3xl p-6 shadow-2xl transform scale-95 transition-transform" onclick="event.stopPropagation()">
+                <div class="flex justify-between items-center mb-6">
+                    <h3 class="text-xl font-bold">Settings</h3>
+                    <button onclick="toggleSettings()" class="w-8 h-8 rounded-full bg-black/5 dark:bg-white/10 flex items-center justify-center hover:bg-black/10 transition-colors"><i class="fa-solid fa-times"></i></button>
+                </div>
+                <div class="space-y-3">
+                    <button class="w-full text-left p-4 rounded-2xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors font-medium flex justify-between items-center">
+                        <span><i class="fa-solid fa-key mr-2 opacity-70"></i> API Keys</span><i class="fa-solid fa-chevron-right opacity-50 text-sm"></i>
+                    </button>
+                    <button class="w-full text-left p-4 rounded-2xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors font-medium flex justify-between items-center">
+                        <span><i class="fa-solid fa-database mr-2 opacity-70"></i> Persistent Memory</span><i class="fa-solid fa-chevron-right opacity-50 text-sm"></i>
+                    </button>
+                    <button class="w-full text-left p-4 rounded-2xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors font-medium flex justify-between items-center">
+                        <span><i class="fa-solid fa-shield-halved mr-2 opacity-70"></i> Auth & Security</span><i class="fa-solid fa-chevron-right opacity-50 text-sm"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- CONNECTIONS MODAL -->
+        <div id="connections-menu" class="modal-overlay" onclick="closeModals(event)">
+            <div class="glass-modal w-full max-w-sm rounded-3xl p-6 shadow-2xl transform scale-95 transition-transform" onclick="event.stopPropagation()">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-bold"><i class="fa-solid fa-plug mr-2 text-blue-500"></i> Active Integrations</h3>
+                    <button onclick="toggleConnections()" class="w-8 h-8 rounded-full bg-black/5 dark:bg-white/10 flex items-center justify-center hover:bg-black/10 transition-colors"><i class="fa-solid fa-times"></i></button>
+                </div>
+                <p class="text-xs opacity-70 mb-4">Select the tools the agent uses for the next task.</p>
+                <div class="space-y-2">
+                    <label class="flex items-center justify-between p-3 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer border border-transparent hover:border-white/20">
+                        <span class="font-medium flex items-center"><i class="fa-brands fa-github text-xl mr-3"></i> GitHub</span>
+                        <input type="checkbox" checked class="w-4 h-4 rounded text-blue-500">
+                    </label>
+                    <label class="flex items-center justify-between p-3 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer border border-transparent hover:border-white/20">
+                        <span class="font-medium flex items-center"><i class="fa-solid fa-cloud text-xl mr-3 text-orange-400"></i> GroqCloud API</span>
+                        <input type="checkbox" checked class="w-4 h-4 rounded text-blue-500">
+                    </label>
+                    <label class="flex items-center justify-between p-3 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer border border-transparent hover:border-white/20">
+                        <span class="font-medium flex items-center"><i class="fa-solid fa-robot text-xl mr-3 text-emerald-500"></i> Google AI Studio</span>
+                        <input type="checkbox" class="w-4 h-4 rounded text-blue-500">
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <!-- INFO REQUEST MODAL -->
+        <div id="info-request-overlay" class="info-modal-overlay" onclick="closeInfoModal(event)">
+            <div class="info-modal" onclick="event.stopPropagation()">
+                <div class="flex justify-between items-center mb-3">
+                    <h3 class="text-lg font-bold">Information Needed</h3>
+                    <button onclick="closeInfoModal()" class="w-8 h-8 rounded-full bg-black/5 dark:bg-white/10 flex items-center justify-center hover:bg-black/10 transition-colors"><i class="fa-solid fa-times"></i></button>
+                </div>
+                <p class="text-xs opacity-60 mb-3" id="info-task-desc"></p>
+                <div class="info-security">
+                    <i class="fa-solid fa-lock"></i>
+                    <p id="info-security-text">Your data is encrypted and stored locally. It never leaves this server.</p>
+                </div>
+                <div id="info-fields"></div>
+                <button class="info-submit" onclick="submitInfo()">Proceed Securely</button>
+            </div>
+        </div>
+
+        <!-- SELF-IMPROVEMENT TOAST -->
+        <div class="evolve-toast" id="evolveToast"><h4 id="evolve-title">Self-Improvement</h4><p id="evolve-text"></p></div>
+
+        <!-- INPUT BAR -->
+        <footer class="p-5 z-20">
+            <div class="glass rounded-full p-2 pl-5 flex items-center gap-3 border border-white/60 dark:border-white/20 shadow-xl">
+                <button onclick="toggleConnections()" class="w-10 h-10 rounded-full bg-black/5 dark:bg-white/10 flex items-center justify-center transition-colors text-base text-blue-500 hover:bg-black/10 dark:hover:bg-white/20 flex-shrink-0" title="Connect Tools">
+                    <i class="fa-solid fa-link"></i>
+                </button>
+                <input type="text" id="chat-input" placeholder="Ask me anything..." class="bg-transparent flex-1 outline-none px-1 text-base placeholder-slate-500 dark:placeholder-slate-400 font-medium">
+                <button id="action-btn" class="action-btn-fixed" onclick="handleAction()">
+                    <i class="fa-solid fa-microphone" id="action-icon"></i>
+                </button>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+        let isDarkMode=false, network=null, fsNetwork=null, evtCount=0;
+        const socket=io();
+        const graphNodes=new vis.DataSet(), graphEdges=new vis.DataSet();
+        const fsNodes=new vis.DataSet(), fsEdges=new vis.DataSet();
+        let nodeIdCounter=10;
+
+        // Socket events
+        socket.on('connect',()=>{addFeedItem('system','fa-plug','Connected','Real-time link established','',false)});
+        socket.on('state_update',(d)=>{updateOrb(d.status)});
+        socket.on('agent_event',(p)=>{evtCount++;document.getElementById('eventCount').textContent=evtCount+' events';handleAgentEvent(p)});
+        socket.on('chat_response',(d)=>{addChatMessage('assistant',d.content)});
+        socket.on('info_request',(d)=>{showInfoRequest(d)});
+        socket.on('self_improvement',(d)=>{showEvolveToast(d)});
+
+        // Agent events
+        function handleAgentEvent(payload){
+            const{event_type:t,data:d}=payload;
+            const tm=new Date(payload.timestamp).toLocaleTimeString();
+            switch(t){
+                case'agent_start':updateOrb('running');clearFeed();addFeedItem('system','fa-rocket','Agent Launched',d.goal||'Starting...','',true,`Goal: ${d.goal}\nModel: Llama 3.3 70B via Groq`);switchView('preview');initNetwork();initFullscreenNetwork();break;
+                case'iteration_start':updateOrb('thinking');addFeedItem('system','fa-repeat',`Iteration ${d.iteration}/${d.max_iterations||15}`,'New reasoning cycle',tm,false,`Phase: Thought\nModel: Task Manager`);break;
+                case'thinking':updateOrb('thinking');addFeedItem('think','fa-brain','Thought','Analyzing situation and planning...',tm,false,'Phase: Analyze\nEvaluating what is known and what is needed next.');break;
+                case'model_response':addFeedItem('think','fa-lightbulb','Model Response',(d.content||'').substring(0,180),tm,false,`Content: ${d.content||'(none)'}\nTool Calls: ${d.has_tool_calls?'Yes':'No'}\nModel: ${d.model_role||'task_manager'}\nConfidence: ${d.confidence?(d.confidence*100).toFixed(0)+'%':'N/A'}`);const ml=d.model_role==='task_manager'?'Llama 3.3 70B':'Gemini 2.5 Flash';const nid=nodeIdCounter++;addNodeToBoth(nid,ml,14);addEdgeToBoth(1,nid);break;
+                case'tool_decision':addFeedItem('action','fa-crosshairs','Decision',`Selected: ${d.tool_name}`,tm,false,`Tool: ${d.tool_name}\nReasoning: ${d.reasoning||'N/A'}\nArguments: ${d.arguments||'{}'}`);break;
+                case'tool_executing':updateOrb('executing');addFeedItem('action','fa-bolt',`Executing: ${d.tool_name}`,formatArgs(d.arguments),tm,false,`Tool: ${d.tool_name}\nArguments: ${JSON.stringify(d.arguments,null,2)}\nStatus: Running...`);const tnid=nodeIdCounter++;addNodeToBoth(tnid,d.tool_name,13);addEdgeToBoth(nodeIdCounter-2>=10?nodeIdCounter-2:1,tnid);addTimelineEntry(d.tool_name,0.3,'action');break;
+                case'tool_result':addFeedItem('observe','fa-circle-check',`Result: ${d.tool_name}`,(d.result||'').substring(0,180),tm,false,`Tool: ${d.tool_name}\nResult: ${d.result||'(empty)'}\nDuration: ${d.elapsed_seconds||'?'}s`);if(d.elapsed_seconds)addTimelineEntry(d.tool_name,d.elapsed_seconds,'observe');break;
+                case'observation':updateOrb('thinking');addFeedItem('observe','fa-eye','Observation',d.analysis||`Processed ${d.num_tool_results} result(s)`,tm,false,`Results: ${d.num_tool_results||0}\nTurns: ${d.conversation_length||0}`);break;
+                case'agent_complete':updateOrb('idle');addFeedItem('complete','fa-check','Task Complete',d.summary||'Done',tm,true,`Status: Complete\nSummary: ${d.summary||'All tasks done'}`);playSound('complete');break;
+                case'report':addFeedItem('complete','fa-chart-bar','Report',`${d.iterations} iters | ${d.elapsed_seconds}s | ${d.conversation_turns} turns`,tm,true,`Goal: ${d.goal}\nIterations: ${d.iterations}\nDuration: ${d.elapsed_seconds}s\nCompleted: ${d.completed}\nTurns: ${d.conversation_turns}`);break;
+                case'error':case'iteration_error':updateOrb('error');addFeedItem('error','fa-triangle-exclamation','Error',d.error||'Failed',tm,true,`Error: ${d.error}`);playSound('error');break;
+                default:addFeedItem('system','fa-circle-info',t,JSON.stringify(d).substring(0,80),tm,false,JSON.stringify(d,null,2));
+            }
+        }
+
+        // Graph helpers — sync both mini and fullscreen
+        function addNodeToBoth(id,label,size){graphNodes.add({id,label,size});fsNodes.add({id,label,size})}
+        function addEdgeToBoth(from,to){graphEdges.add({from,to});fsEdges.add({from,to})}
+
+        function getNetOpts(container){
+            const c=isDarkMode?{nBg:'rgba(30,41,59,0.5)',nBd:'rgba(255,255,255,0.2)',font:'#f8fafc',edge:'rgba(196,181,253,0.5)',shadow:'rgba(0,0,0,0.4)'}:{nBg:'rgba(255,255,255,0.5)',nBd:'rgba(255,255,255,0.9)',font:'#1e293b',edge:'rgba(139,92,246,0.4)',shadow:'rgba(0,0,0,0.1)'};
+            return{nodes:{shape:'box',margin:{top:16,bottom:16,left:24,right:24},borderWidth:1.5,color:{background:c.nBg,border:c.nBd},font:{color:c.font,face:'-apple-system,sans-serif',size:13,bold:true},shapeProperties:{borderRadius:16},shadow:{enabled:true,color:c.shadow,size:20,x:0,y:8}},edges:{width:2.5,color:{color:c.edge},smooth:{type:'continuous'}},physics:{enabled:true,solver:'forceAtlas2Based',forceAtlas2Based:{gravitationalConstant:-20,centralGravity:0.003,springLength:150,springConstant:0.02,damping:0.95},maxVelocity:1,minVelocity:0.1,timestep:0.3},interaction:{dragNodes:true,zoomView:true,dragView:true}};
+        }
+
+        function initNetwork(){
+            const c=document.getElementById('network-container');if(!c||c.clientHeight<10)return;
+            graphNodes.clear();graphEdges.clear();nodeIdCounter=10;
+            graphNodes.add([{id:1,label:'Agent Core',size:22},{id:2,label:'Groq\nLlama 3.3',size:15},{id:3,label:'OpenRouter\nGemini 2.5',size:15},{id:4,label:'Tools',size:15},{id:5,label:'Memory',size:14}]);
+            graphEdges.add([{from:1,to:2},{from:1,to:3},{from:1,to:4},{from:1,to:5},{from:4,to:5}]);
+            if(network)network.destroy();
+            network=new vis.Network(c,{nodes:graphNodes,edges:graphEdges},getNetOpts(c));
+        }
+
+        function initFullscreenNetwork(){
+            const c=document.getElementById('fullscreen-graph-container');if(!c)return;
+            fsNodes.clear();fsEdges.clear();
+            fsNodes.add([{id:1,label:'Agent Core',size:28},{id:2,label:'Groq\nLlama 3.3 70B',size:18},{id:3,label:'OpenRouter\nGemini 2.5 Flash',size:18},{id:4,label:'Tools',size:18},{id:5,label:'Memory Store',size:16}]);
+            fsEdges.add([{from:1,to:2},{from:1,to:3},{from:1,to:4},{from:1,to:5},{from:4,to:5}]);
+            if(fsNetwork)fsNetwork.destroy();
+            fsNetwork=new vis.Network(c,{nodes:fsNodes,edges:fsEdges},getNetOpts(c));
+        }
+
+        function openFullscreenGraph(){
+            document.getElementById('graphFullscreen').classList.add('active');
+            if(!fsNetwork)setTimeout(initFullscreenNetwork,100);
+            // Sync nodes from mini to fullscreen
+            graphNodes.getIds().forEach(id=>{const n=graphNodes.get(id);if(!fsNodes.get(id))fsNodes.add(n)});
+            graphEdges.getIds().forEach(id=>{const e=graphEdges.get(id);if(!fsEdges.get(id))fsEdges.add(e)});
+        }
+        function closeFullscreenGraph(){document.getElementById('graphFullscreen').classList.remove('active')}
+
+        // Feed
+        function addFeedItem(type,icon,label,text,time,hl,detail){
+            const feed=document.getElementById('liveFeed'),empty=document.getElementById('feedEmpty');if(empty)empty.remove();
+            const item=document.createElement('div');item.className='feed-item'+(hl?' expanded':'');
+            let tags='';if(type==='action')tags='<span class="feed-tag tag-tool">TOOL</span>';else if(type==='think')tags='<span class="feed-tag tag-phase">THOUGHT</span>';else if(type==='observe')tags='<span class="feed-tag tag-ok">RESULT</span>';else if(type==='complete')tags='<span class="feed-tag tag-ok">DONE</span>';
+            item.innerHTML=`<div class="feed-header" onclick="toggleFeedItem(this)"><div class="feed-header-left"><div class="feed-icon ${type==='think'?'think':type==='action'?'action':type==='observe'?'observe':type==='complete'?'complete':type==='error'?'error':'system'}"><i class="fa-solid ${icon}"></i></div><div style="min-width:0"><div class="feed-label">${label} ${tags}</div><div style="font-size:11px;opacity:0.6;margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(text)}</div></div></div><div style="display:flex;align-items:center;gap:8px"><span class="feed-time">${time}</span><i class="fa-solid fa-chevron-down feed-chevron"></i></div></div><div class="feed-detail"><div class="feed-detail-content">${escapeHtml(detail||text)}</div></div>`;
+            feed.insertBefore(item,feed.firstChild);while(feed.children.length>35)feed.removeChild(feed.lastChild);
+        }
+        function toggleFeedItem(h){h.parentElement.classList.toggle('expanded')}
+        function clearFeed(){document.getElementById('liveFeed').innerHTML=''}
+
+        // Orb
+        function updateOrb(s){const o=document.getElementById('agent-orb'),l=document.getElementById('orb-status');o.className='orb';if(s==='thinking')o.classList.add('thinking');else if(s==='executing')o.classList.add('executing');l.textContent={idle:'Idle \u2014 Ready',running:'Running',thinking:'Thinking...',executing:'Executing...',error:'Error \u2014 Retrying'}[s]||s}
+
+        // Chat
+        function renderMd(t){if(!t)return'';let h=escapeHtml(t);h=h.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>');h=h.replace(/\*(.+?)\*/g,'<em>$1</em>');h=h.replace(/`(.+?)`/g,'<code style="background:rgba(128,128,128,0.1);padding:1px 4px;border-radius:3px;font-size:12px">$1</code>');h=h.replace(/\n/g,'<br>');return h}
+        function addChatMessage(role,content){const c=document.getElementById('chatMessages'),m=document.createElement('div');m.className='chat-msg '+role;const av=role==='user'?'fa-user':'fa-robot';m.innerHTML=`<div class="chat-avatar"><i class="fa-solid ${av}"></i></div><div class="chat-bubble">${renderMd(content)}</div>`;c.appendChild(m);c.scrollTop=c.scrollHeight}
+
+        // Input / Send / Voice
+        const inp=document.getElementById('chat-input'),btn=document.getElementById('action-btn'),icon=document.getElementById('action-icon');
+        let recognition=null,isListening=false;
+        inp.addEventListener('input',()=>{if(inp.value.trim()){icon.className='fa-solid fa-paper-plane';btn.classList.add('has-text')}else{icon.className='fa-solid fa-microphone';btn.classList.remove('has-text')}});
+        inp.addEventListener('keypress',(e)=>{if(e.key==='Enter'&&inp.value.trim())handleAction()});
+
+        function handleAction(){
+            const msg=inp.value.trim();
+            if(msg){addChatMessage('user',msg);socket.emit('send_chat',{message:msg});inp.value='';icon.className='fa-solid fa-microphone';btn.classList.remove('has-text')}
+            else{toggleVoice()}
+        }
+
+        function toggleVoice(){
+            const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+            if(!SR){addChatMessage('assistant','Voice input is not supported in this browser.');return}
+            if(isListening){stopVoice();return}
+            if(!recognition){recognition=new SR();recognition.continuous=false;recognition.interimResults=false;recognition.lang='en-US';recognition.onresult=(e)=>{inp.value=e.results[0][0].transcript;onInput();stopVoice()};recognition.onerror=()=>stopVoice();recognition.onend=()=>stopVoice()}
+            isListening=true;btn.classList.add('voice-active');icon.className='fa-solid fa-microphone-lines';
+            try{recognition.start()}catch(e){stopVoice()}
+        }
+        function stopVoice(){isListening=false;btn.classList.remove('voice-active');if(inp.value.trim()){icon.className='fa-solid fa-paper-plane';btn.classList.add('has-text')}else{icon.className='fa-solid fa-microphone';btn.classList.remove('has-text')}try{recognition.stop()}catch(e){}}
+        function onInput(){inp.dispatchEvent(new Event('input'))}
+
+        // Sounds
+        let audioCtx=null;
+        function playSound(type){try{if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)();const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.connect(g);g.connect(audioCtx.destination);if(type==='complete'){o.frequency.value=800;g.gain.value=0.08;o.start();o.frequency.setValueAtTime(1200,audioCtx.currentTime+0.1);g.gain.setValueAtTime(0,audioCtx.currentTime+0.3);o.stop(audioCtx.currentTime+0.3)}else if(type==='error'){o.frequency.value=300;g.gain.value=0.08;o.start();o.frequency.setValueAtTime(200,audioCtx.currentTime+0.15);g.gain.setValueAtTime(0,audioCtx.currentTime+0.3);o.stop(audioCtx.currentTime+0.3)}}catch(e){}}
+
+        // Timeline
+        let tlData=[];
+        function addTimelineEntry(label,dur,type){const empty=document.getElementById('timelineEmpty');if(empty)empty.remove();tlData.push({label,duration:dur,type});const c=document.getElementById('timeline'),max=Math.max(...tlData.map(d=>d.duration),1);c.innerHTML=tlData.slice(-8).map(d=>{const p=Math.max((d.duration/max)*100,2);const col=d.type==='think'?'#8b5cf6':d.type==='action'?'#f59e0b':d.type==='observe'?'#06b6d4':'#10b981';return`<div class="tl-row"><span class="tl-label">${d.label}</span><div class="tl-bar-wrap"><div class="tl-bar" style="width:${p}%;background:${col}"></div></div><span class="tl-time">${d.duration.toFixed(1)}s</span></div>`}).join('')}
+
+        // Modals
+        function toggleSettings(){document.getElementById('settings-menu').classList.toggle('active')}
+        function toggleConnections(){document.getElementById('connections-menu').classList.toggle('active')}
+        function closeModals(e){if(e.target.classList.contains('modal-overlay')){document.getElementById('settings-menu').classList.remove('active');document.getElementById('connections-menu').classList.remove('active')}}
+
+        // View switch
+        function switchView(v){const ct=document.getElementById('chat-tab'),pt=document.getElementById('preview-tab'),bc=document.getElementById('btn-chat'),bp=document.getElementById('btn-preview');if(v==='chat'){ct.classList.add('active');pt.classList.remove('active');bc.classList.add('bg-white/60','dark:bg-white/20');bc.classList.remove('text-slate-500','dark:text-slate-400');bp.classList.remove('bg-white/60','dark:bg-white/20');bp.classList.add('text-slate-500','dark:text-slate-400')}else{pt.classList.add('active');ct.classList.remove('active');bp.classList.add('bg-white/60','dark:bg-white/20');bp.classList.remove('text-slate-500','dark:text-slate-400');bc.classList.remove('bg-white/60','dark:bg-white/20');bc.classList.add('text-slate-500','dark:text-slate-400');if(!network)setTimeout(initNetwork,150)}}
+
+        // Theme
+        function toggleTheme(){isDarkMode=!isDarkMode;document.body.classList.toggle('dark-mode');document.getElementById('theme-icon').className=isDarkMode?'fa-solid fa-sun':'fa-solid fa-moon';if(network)network.setOptions(getNetOpts());if(fsNetwork)fsNetwork.setOptions(getNetOpts())}
+
+        // Info request
+        let pendingTask='';
+        function showInfoRequest(d){pendingTask=d.task;document.getElementById('info-task-desc').textContent=d.task;document.getElementById('info-security-text').textContent=d.security_note||'Your data is stored locally and encrypted.';const fc=document.getElementById('info-fields');fc.innerHTML='';(d.requests||[]).forEach(r=>{const div=document.createElement('div');div.className='info-field';let iH='';if(r.type==='textarea')iH=`<textarea id="info-${r.key}" placeholder="${r.placeholder||''}" rows="3"></textarea>`;else if(r.type==='select'){const o=(r.options||[]).map(x=>`<option>${x}</option>`).join('');iH=`<select id="info-${r.key}">${o}</select>`}else iH=`<input type="${r.type||'text'}" id="info-${r.key}" placeholder="${r.placeholder||''}">`;div.innerHTML=`<label>${r.label}</label>${iH}${r.help?`<div class="help-text">${r.help}</div>`:''}`;fc.appendChild(div)});document.getElementById('info-request-overlay').classList.add('active')}
+        function closeInfoModal(e){if(e&&e.target&&!e.target.classList.contains('info-modal-overlay'))return;document.getElementById('info-request-overlay').classList.remove('active')}
+        function submitInfo(){const creds={};document.querySelectorAll('#info-fields input,#info-fields textarea,#info-fields select').forEach(f=>{creds[f.id.replace('info-','')]=f.value});fetch('/api/task/execute',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({task:pendingTask,credentials:creds})}).then(r=>r.json()).then(d=>{document.getElementById('info-request-overlay').classList.remove('active');if(d.status==='started')addChatMessage('assistant','Credentials received securely. Launching now...');else addChatMessage('assistant','Task processing...')}).catch(e=>addChatMessage('assistant','Error: '+e))}
+
+        // Evolve toast
+        function showEvolveToast(d){const p=d.performance||{},a=d.analysis||{},f=a.findings||[];document.getElementById('evolve-title').textContent=p.evolution_stage||'Self-Improvement';document.getElementById('evolve-text').textContent=f.length?f[f.length-1]:`Run analyzed. ${p.success_rate||''} success rate.`;const t=document.getElementById('evolveToast');t.classList.add('show');setTimeout(()=>t.classList.remove('show'),5000)}
+
+        // Utils
+        function escapeHtml(t){const d=document.createElement('div');d.textContent=t||'';return d.innerHTML}
+        function formatArgs(o){if(typeof o==='string')try{o=JSON.parse(o)}catch{return o}return JSON.stringify(o,null,0).substring(0,120)}
+    </script>
+</body>
+</html>
