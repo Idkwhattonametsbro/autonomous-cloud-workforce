@@ -1,0 +1,12 @@
+# Core LLM SDKs
+groq>=0.9.0
+requests>=2.31.0
+
+# Optional: Uncomment for integrations you want to activate
+# google-api-python-client>=2.100.0    # Gmail API
+# google-auth-oauthlib>=1.1.0          # Gmail OAuth
+# hubspot-api-client>=8.0.0            # HubSpot CRM
+# openai>=1.10.0                       # OpenAI SDK (if needed)
+# tavily-python>=0.3.0                 # Web search
+# psycopg2-binary>=2.9.9               # PostgreSQL
+# sqlalchemy>=2.0.25                   # Database ORM

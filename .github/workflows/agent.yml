@@ -1,0 +1,106 @@
+# ─────────────────────────────────────────────────────────────
+# Autonomous Cloud Workforce — GitHub Actions Workflow
+# ─────────────────────────────────────────────────────────────
+# This workflow wakes up the agent on a cron schedule OR on-demand.
+# It runs inside a free GitHub Actions runner for ~30-45 seconds,
+# executes the ReAct loop, logs results, and shuts down.
+# ─────────────────────────────────────────────────────────────
+
+name: 🤖 Autonomous Agent
+
+on:
+  # ─── Cron Schedule ───
+  # Runs every 30 minutes, 24/7. Adjust as needed:
+  #   */15 * * * *  = every 15 minutes
+  #   */30 * * * *  = every 30 minutes (default)
+  #   0 * * * *     = every hour
+  #   0 */6 * * *   = every 6 hours
+  schedule:
+    - cron: '*/30 * * * *'
+
+  # ─── Manual Trigger ───
+  # Allows you to wake the agent on-demand from the Actions tab
+  workflow_dispatch:
+    inputs:
+      goal:
+        description: 'Override the agent goal for this run'
+        required: false
+        default: ''
+      model_role:
+        description: 'Force a specific model role (task_manager, data_reader, code_specialist)'
+        required: false
+        default: ''
+
+  # ─── Webhook Trigger ───
+  # External services (e.g., website forms, Stripe webhooks) can trigger
+  # the agent via repository_dispatch
+  repository_dispatch:
+    types: [agent_trigger]
+
+# ─── Concurrency Control ───
+# Prevents overlapping runs if a cron fires while another is still running
+concurrency:
+  group: agent-run
+  cancel-in-progress: false
+
+jobs:
+  agent:
+    name: 🧠 ReAct Agent Loop
+    runs-on: ubuntu-latest
+    timeout-minutes: 5  # Hard limit — agent should finish in 30-45 seconds
+
+    steps:
+      # ─── Step 1: Check out the repository ───
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for git operations
+
+      # ─── Step 2: Set up Python ───
+      - name: 🐍 Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      # ─── Step 3: Install dependencies ───
+      - name: 📦 Install dependencies
+        run: pip install -r requirements.txt
+
+      # ─── Step 4: Configure git for commits ───
+      - name: 🔧 Configure git
+        run: |
+          git config user.name "Autonomous Agent"
+          git config user.email "agent@autonomous-workforce.bot"
+
+      # ─── Step 5: Run the Agent ───
+      - name: 🚀 Execute ReAct Agent
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          AGENT_GOAL: ${{ github.event.inputs.goal || '' }}
+          VERBOSE: 'true'
+        run: python main.py
+
+      # ─── Step 6: Upload execution reports ───
+      - name: 📄 Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-report-${{ github.run_number }}
+          path: |
+            reports/
+            logs/
+          retention-days: 30
+
+      # ─── Step 7: Push any file changes back ───
+      - name: 📦 Commit and push changes
+        if: always()
+        run: |
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "🤖 Agent run: $(date -u '+%Y-%m-%d %H:%M UTC')"
+            git push
+          fi

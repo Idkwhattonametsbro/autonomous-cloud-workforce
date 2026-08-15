@@ -1,0 +1,1100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Autonomous Agent</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
+
+    <style>
+        :root {
+            --bg-base: #f0f4ff;
+            --bg-gradient-1: #c4b5fd;
+            --bg-gradient-2: #fbcfe8;
+            --glass-bg: rgba(255, 255, 255, 0.45);
+            --glass-border: rgba(255, 255, 255, 0.6);
+            --text-main: #1e293b;
+            --orb-color-1: #8b5cf6;
+            --orb-color-2: #3b82f6;
+        }
+        .dark-mode {
+            --bg-base: #020617;
+            --bg-gradient-1: #1e1b4b;
+            --bg-gradient-2: #0f172a;
+            --glass-bg: rgba(15, 23, 42, 0.5);
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --text-main: #f8fafc;
+            --orb-color-1: #c4b5fd;
+            --orb-color-2: #60a5fa;
+        }
+        body {
+            background-color: var(--bg-base);
+            color: var(--text-main);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            overflow: hidden;
+            transition: background-color 0.4s ease, color 0.4s ease;
+            margin: 0;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+        }
+        .ambient-bg {
+            position: fixed;
+            top: 0; left: 0; width: 100vw; height: 100vh;
+            z-index: 0;
+            background:
+                radial-gradient(circle at 20% 40%, var(--bg-gradient-1) 0%, transparent 60%),
+                radial-gradient(circle at 80% 60%, var(--bg-gradient-2) 0%, transparent 60%);
+            filter: blur(70px);
+            opacity: 0.8;
+            transition: all 0.5s ease;
+        }
+        .glass {
+            background: var(--glass-bg);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border: 1px solid var(--glass-border);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.05);
+        }
+        .glass-modal {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(30px);
+            -webkit-backdrop-filter: blur(30px);
+            border: 1px solid rgba(255, 255, 255, 0.5);
+        }
+        .dark-mode .glass-modal {
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .orb-container {
+            position: relative;
+            width: 140px; height: 140px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .orb {
+            width: 100%; height: 100%;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--orb-color-1), var(--orb-color-2));
+            box-shadow: 0 0 35px var(--orb-color-1), inset 0 0 20px rgba(255,255,255,0.3);
+            animation: breathe 5s ease-in-out infinite;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 12px;
+            transition: all 0.4s ease;
+        }
+        .orb.thinking {
+            animation: breathe 2s ease-in-out infinite;
+            box-shadow: 0 0 50px var(--orb-color-1), inset 0 0 20px rgba(255,255,255,0.3);
+        }
+        .orb.executing {
+            animation: breathe 1s ease-in-out infinite;
+            box-shadow: 0 0 60px #f59e0b, inset 0 0 20px rgba(255,255,255,0.3);
+        }
+        .orb-eyes {
+            width: 12px; height: 24px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 0 10px rgba(255,255,255,0.8);
+        }
+        @keyframes breathe {
+            0%, 100% { transform: scale(1); box-shadow: 0 0 35px var(--orb-color-1); }
+            50% { transform: scale(1.04); box-shadow: 0 0 55px var(--orb-color-2); }
+        }
+        .app-layout {
+            width: 100%;
+            max-width: 500px;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            z-index: 10;
+        }
+        .content-area {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+        }
+        .tab-section {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            display: flex;
+            flex-direction: column;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.4s ease;
+            overflow-y: auto;
+            padding-bottom: 20px;
+        }
+        .tab-section.active {
+            opacity: 1;
+            pointer-events: all;
+        }
+        #network-container {
+            width: 100%;
+            height: 100%;
+            outline: none;
+        }
+        .modal-overlay {
+            position: absolute;
+            inset: 0;
+            z-index: 50;
+            background: rgba(0,0,0,0.1);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .modal-overlay.active {
+            opacity: 1;
+            pointer-events: all;
+        }
+        .dark-mode .modal-overlay {
+            background: rgba(0,0,0,0.4);
+        }
+
+        /* === EXPANDABLE LIVE PREVIEW BLOCKS === */
+        .live-feed {
+            padding: 0 20px;
+            margin-top: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            max-height: 40vh;
+            overflow-y: auto;
+        }
+        .live-feed::-webkit-scrollbar { width: 4px; }
+        .live-feed::-webkit-scrollbar-thumb { background: var(--glass-border); border-radius: 4px; }
+        .feed-item {
+            background: var(--glass-bg);
+            backdrop-filter: blur(16px);
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+            overflow: hidden;
+            transition: all 0.3s ease;
+            animation: feedSlide 0.3s ease;
+        }
+        @keyframes feedSlide {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .feed-header {
+            padding: 12px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            cursor: pointer;
+            user-select: none;
+        }
+        .feed-header:hover { background: rgba(255,255,255,0.05); }
+        .feed-header-left {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .feed-icon {
+            width: 28px; height: 28px;
+            border-radius: 8px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 12px;
+            flex-shrink: 0;
+        }
+        .feed-icon.think { background: rgba(139,92,246,0.15); color: #8b5cf6; }
+        .feed-icon.action { background: rgba(245,158,11,0.15); color: #f59e0b; }
+        .feed-icon.observe { background: rgba(6,182,212,0.15); color: #06b6d4; }
+        .feed-icon.complete { background: rgba(16,185,129,0.15); color: #10b981; }
+        .feed-icon.error { background: rgba(239,68,68,0.15); color: #ef4444; }
+        .feed-icon.system { background: rgba(59,130,246,0.15); color: #3b82f6; }
+        .feed-label { font-size: 13px; font-weight: 600; }
+        .feed-time { font-size: 10px; opacity: 0.5; }
+        .feed-chevron {
+            font-size: 11px;
+            opacity: 0.4;
+            transition: transform 0.3s ease;
+        }
+        .feed-item.expanded .feed-chevron {
+            transform: rotate(180deg);
+        }
+        .feed-detail {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.35s ease, padding 0.35s ease;
+            padding: 0 16px;
+        }
+        .feed-item.expanded .feed-detail {
+            max-height: 300px;
+            padding: 0 16px 14px;
+        }
+        .feed-detail-content {
+            font-size: 11px;
+            opacity: 0.7;
+            line-height: 1.6;
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            white-space: pre-wrap;
+            word-break: break-all;
+            background: rgba(0,0,0,0.06);
+            border-radius: 8px;
+            padding: 10px 12px;
+        }
+        .dark-mode .feed-detail-content {
+            background: rgba(255,255,255,0.04);
+        }
+        .feed-tag {
+            display: inline-block;
+            padding: 2px 7px;
+            border-radius: 4px;
+            font-size: 9px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+        .tag-tool { background: rgba(245,158,11,0.12); color: #f59e0b; }
+        .tag-model { background: rgba(59,130,246,0.12); color: #3b82f6; }
+        .tag-ok { background: rgba(16,185,129,0.12); color: #10b981; }
+        .tag-phase { background: rgba(139,92,246,0.12); color: #8b5cf6; }
+
+        /* Orb status label */
+        .orb-status {
+            text-align: center;
+            margin-top: 12px;
+            font-size: 12px;
+            font-weight: 500;
+            opacity: 0.6;
+        }
+
+        /* === INFO REQUEST MODAL === */
+        .info-modal-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 200;
+            background: rgba(0,0,0,0.15);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+            display: flex;
+            justify-content: center;
+            align-items: flex-end;
+            padding: 20px;
+        }
+        .dark-mode .info-modal-overlay { background: rgba(0,0,0,0.5); }
+        .info-modal-overlay.active { opacity: 1; pointer-events: all; }
+        .info-modal {
+            background: rgba(255,255,255,0.75);
+            backdrop-filter: blur(30px);
+            -webkit-backdrop-filter: blur(30px);
+            border: 1px solid rgba(255,255,255,0.5);
+            border-radius: 24px;
+            padding: 24px;
+            width: 100%;
+            max-width: 460px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+            transform: translateY(20px);
+            transition: transform 0.3s ease;
+        }
+        .dark-mode .info-modal {
+            background: rgba(15, 23, 42, 0.85);
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .info-modal-overlay.active .info-modal { transform: translateY(0); }
+        .info-field { margin-bottom: 14px; }
+        .info-field label {
+            display: block;
+            font-size: 12px;
+            font-weight: 600;
+            margin-bottom: 5px;
+            opacity: 0.8;
+        }
+        .info-field input, .info-field textarea, .info-field select {
+            width: 100%;
+            padding: 10px 14px;
+            border-radius: 12px;
+            border: 1px solid rgba(128,128,128,0.2);
+            background: rgba(128,128,128,0.06);
+            font-size: 13px;
+            color: var(--text-main);
+            outline: none;
+            transition: border-color 0.2s;
+            font-family: inherit;
+        }
+        .info-field input:focus, .info-field textarea:focus, .info-field select:focus {
+            border-color: #8b5cf6;
+        }
+        .info-field textarea { resize: vertical; min-height: 60px; }
+        .info-field .help-text {
+            font-size: 10px;
+            opacity: 0.5;
+            margin-top: 3px;
+        }
+        .info-security {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            padding: 12px;
+            border-radius: 12px;
+            background: rgba(16,185,129,0.06);
+            border: 1px solid rgba(16,185,129,0.12);
+            margin-bottom: 16px;
+        }
+        .info-security i { color: #10b981; font-size: 14px; margin-top: 1px; flex-shrink: 0; }
+        .info-security p { font-size: 11px; line-height: 1.5; opacity: 0.7; margin: 0; }
+        .info-submit {
+            width: 100%;
+            padding: 12px;
+            border-radius: 14px;
+            border: none;
+            background: linear-gradient(135deg, #8b5cf6, #3b82f6);
+            color: white;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.15s, box-shadow 0.2s;
+        }
+        .info-submit:hover { transform: translateY(-1px); box-shadow: 0 8px 20px rgba(139,92,246,0.3); }
+        .info-submit:active { transform: scale(0.98); }
+
+        /* === SELF-IMPROVEMENT TOAST === */
+        .evolve-toast {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%) translateY(-100px);
+            background: rgba(15,23,42,0.85);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(139,92,246,0.3);
+            border-radius: 16px;
+            padding: 14px 20px;
+            z-index: 300;
+            transition: transform 0.4s ease;
+            max-width: 400px;
+            text-align: center;
+        }
+        .evolve-toast.show { transform: translateX(-50%) translateY(0); }
+        .evolve-toast h4 { font-size: 12px; font-weight: 700; color: #c4b5fd; margin: 0 0 4px; }
+        .evolve-toast p { font-size: 11px; color: rgba(255,255,255,0.6); margin: 0; line-height: 1.4; }
+
+        /* Chat messages in chat tab */
+        .chat-messages {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            padding: 0 20px;
+            margin-bottom: 12px;
+            max-height: 30vh;
+            overflow-y: auto;
+        }
+        .chat-messages::-webkit-scrollbar { width: 4px; }
+        .chat-messages::-webkit-scrollbar-thumb { background: var(--glass-border); border-radius: 4px; }
+        .chat-msg { display: flex; gap: 8px; animation: feedSlide 0.25s ease; }
+        .chat-msg.user { flex-direction: row-reverse; }
+        .chat-avatar {
+            width: 28px; height: 28px;
+            border-radius: 8px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 12px; flex-shrink: 0;
+        }
+        .chat-msg.user .chat-avatar { background: rgba(59,130,246,0.12); color: #3b82f6; }
+        .chat-msg.assistant .chat-avatar { background: rgba(139,92,246,0.12); color: #8b5cf6; }
+        .chat-bubble {
+            max-width: 80%;
+            padding: 9px 14px;
+            border-radius: 14px;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+        .chat-msg.user .chat-bubble {
+            background: rgba(59,130,246,0.08);
+            border: 1px solid rgba(59,130,246,0.12);
+            border-bottom-right-radius: 4px;
+        }
+        .chat-msg.assistant .chat-bubble {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            border-bottom-left-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="ambient-bg"></div>
+
+    <div class="app-layout">
+
+        <!-- FIXED HEADER -->
+        <header class="flex justify-between items-center p-5 z-20">
+            <button onclick="toggleSettings()" class="w-11 h-11 rounded-full glass flex items-center justify-center text-lg active:scale-95 transition-transform hover:bg-white/20">
+                <i class="fa-solid fa-bars"></i>
+            </button>
+
+            <div class="glass rounded-full p-1 flex gap-1 text-sm font-semibold shadow-sm">
+                <button id="btn-chat" class="px-6 py-2 rounded-full bg-white/60 dark:bg-white/20 shadow-sm transition-all" onclick="switchView('chat')">Chat</button>
+                <button id="btn-preview" class="px-6 py-2 rounded-full text-slate-500 dark:text-slate-400 hover:bg-white/30 transition-all" onclick="switchView('preview')">Preview</button>
+            </div>
+
+            <button onclick="toggleTheme()" class="w-11 h-11 rounded-full glass flex items-center justify-center text-lg active:scale-95 transition-transform hover:bg-white/20">
+                <i class="fa-solid fa-moon" id="theme-icon"></i>
+            </button>
+        </header>
+
+        <!-- DYNAMIC CONTENT AREA -->
+        <main class="content-area px-5">
+
+            <!-- CHAT TAB -->
+            <div id="chat-tab" class="tab-section active pt-4">
+                <div class="text-center mb-6">
+                    <h1 class="text-3xl font-bold mb-2 tracking-tight">Hello, Marry!</h1>
+                    <p class="text-base opacity-70">How can I help you today?</p>
+                </div>
+
+                <div class="flex-1 flex flex-col justify-center items-center mb-4">
+                    <div class="orb-container">
+                        <div class="orb" id="agent-orb">
+                            <div class="orb-eyes"></div>
+                            <div class="orb-eyes"></div>
+                        </div>
+                    </div>
+                    <div class="orb-status" id="orb-status">Idle &mdash; Ready</div>
+                </div>
+
+                <!-- Chat messages area -->
+                <div class="chat-messages" id="chatMessages"></div>
+
+                <div class="grid grid-cols-2 gap-3 mt-auto mb-2 px-5">
+                    <button class="glass rounded-2xl p-4 flex items-center gap-3 active:scale-95 transition-transform text-left text-sm font-semibold border border-white/40 dark:border-white/10 hover:bg-white/30" onclick="launchGoal('Search the web for latest market trends and compile a report')">
+                        <div class="text-purple-500 text-lg"><i class="fa-solid fa-globe"></i></div>
+                        Web Search
+                    </button>
+                    <button class="glass rounded-2xl p-4 flex items-center gap-3 active:scale-95 transition-transform text-left text-sm font-semibold border border-white/40 dark:border-white/10 hover:bg-white/30" onclick="launchGoal('Analyze database records and generate insights')">
+                        <div class="text-blue-500 text-lg"><i class="fa-solid fa-chart-pie"></i></div>
+                        Analyze Data
+                    </button>
+                    <button class="glass rounded-2xl p-4 flex items-center gap-3 active:scale-95 transition-transform text-left text-sm font-semibold border border-white/40 dark:border-white/10 hover:bg-white/30" onclick="launchGoal('Generate code for a data processing pipeline')">
+                        <div class="text-emerald-500 text-lg"><i class="fa-solid fa-code"></i></div>
+                        Generate Code
+                    </button>
+                    <button class="glass rounded-2xl p-4 flex items-center gap-3 active:scale-95 transition-transform text-left text-sm font-semibold border border-white/40 dark:border-white/10 hover:bg-white/30" onclick="launchDemo()">
+                        <div class="text-amber-500 text-lg"><i class="fa-solid fa-bolt"></i></div>
+                        Automate Task
+                    </button>
+                </div>
+            </div>
+
+            <!-- PREVIEW TAB -->
+            <div id="preview-tab" class="tab-section">
+                <div class="pb-2 text-center px-5">
+                    <h2 class="text-xl font-bold tracking-tight">Live Execution Graph</h2>
+                    <p class="text-xs opacity-60">Visualizing agent reasoning and tool connections</p>
+                </div>
+                <div id="network-container" class="rounded-3xl glass mt-2 shadow-inner border-white/40 mx-5" style="height:220px"></div>
+
+                <div class="px-5 mt-4 mb-2 flex justify-between items-center">
+                    <h3 class="text-sm font-bold tracking-tight">Live Activity</h3>
+                    <span class="text-xs opacity-50" id="eventCount">0 events</span>
+                </div>
+                <div class="live-feed" id="liveFeed">
+                    <div class="text-center py-8 opacity-40 text-sm" id="feedEmpty">
+                        Launch an agent task to see live activity here.
+                    </div>
+                </div>
+            </div>
+
+        </main>
+
+        <!-- SETTINGS MODAL -->
+        <div id="settings-menu" class="modal-overlay" onclick="closeModals(event)">
+            <div class="glass-modal w-full max-w-sm rounded-3xl p-6 shadow-2xl transform scale-95 transition-transform" onclick="event.stopPropagation()">
+                <div class="flex justify-between items-center mb-6">
+                    <h3 class="text-xl font-bold">Settings</h3>
+                    <button onclick="toggleSettings()" class="w-8 h-8 rounded-full bg-black/5 dark:bg-white/10 flex items-center justify-center hover:bg-black/10 transition-colors"><i class="fa-solid fa-times"></i></button>
+                </div>
+                <div class="space-y-3">
+                    <button class="w-full text-left p-4 rounded-2xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors font-medium flex justify-between items-center">
+                        <span><i class="fa-solid fa-key mr-2 opacity-70"></i> API Keys</span>
+                        <i class="fa-solid fa-chevron-right opacity-50 text-sm"></i>
+                    </button>
+                    <button class="w-full text-left p-4 rounded-2xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors font-medium flex justify-between items-center">
+                        <span><i class="fa-solid fa-database mr-2 opacity-70"></i> Persistent Memory</span>
+                        <i class="fa-solid fa-chevron-right opacity-50 text-sm"></i>
+                    </button>
+                    <button class="w-full text-left p-4 rounded-2xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors font-medium flex justify-between items-center">
+                        <span><i class="fa-solid fa-shield-halved mr-2 opacity-70"></i> Auth & Security</span>
+                        <i class="fa-solid fa-chevron-right opacity-50 text-sm"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- CONNECTIONS MODAL -->
+        <div id="connections-menu" class="modal-overlay" onclick="closeModals(event)">
+            <div class="glass-modal w-full max-w-sm rounded-3xl p-6 shadow-2xl transform scale-95 transition-transform mt-auto mb-24" onclick="event.stopPropagation()">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-bold"><i class="fa-solid fa-plug mr-2 text-blue-500"></i> Active Integrations</h3>
+                    <button onclick="toggleConnections()" class="w-8 h-8 rounded-full bg-black/5 dark:bg-white/10 flex items-center justify-center hover:bg-black/10 transition-colors"><i class="fa-solid fa-times"></i></button>
+                </div>
+                <p class="text-xs opacity-70 mb-4">Select the tools you want the agent to use for the next task.</p>
+                <div class="space-y-2">
+                    <label class="flex items-center justify-between p-3 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer border border-transparent hover:border-white/20">
+                        <span class="font-medium flex items-center"><i class="fa-brands fa-github text-xl mr-3"></i> GitHub (ai-shorts-factory)</span>
+                        <input type="checkbox" checked class="w-4 h-4 rounded text-blue-500">
+                    </label>
+                    <label class="flex items-center justify-between p-3 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer border border-transparent hover:border-white/20">
+                        <span class="font-medium flex items-center"><i class="fa-solid fa-cloud text-xl mr-3 text-orange-400"></i> GroqCloud API</span>
+                        <input type="checkbox" checked class="w-4 h-4 rounded text-blue-500">
+                    </label>
+                    <label class="flex items-center justify-between p-3 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer border border-transparent hover:border-white/20">
+                        <span class="font-medium flex items-center"><i class="fa-solid fa-robot text-xl mr-3 text-emerald-500"></i> Google AI Studio</span>
+                        <input type="checkbox" class="w-4 h-4 rounded text-blue-500">
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <!-- INFO REQUEST MODAL (for when agent needs credentials) -->
+        <div id="info-request-overlay" class="info-modal-overlay" onclick="closeInfoModal(event)">
+            <div class="info-modal" onclick="event.stopPropagation()">
+                <div class="flex justify-between items-center mb-3">
+                    <h3 class="text-lg font-bold" id="info-title">Information Needed</h3>
+                    <button onclick="closeInfoModal()" class="w-8 h-8 rounded-full bg-black/5 dark:bg-white/10 flex items-center justify-center hover:bg-black/10 transition-colors"><i class="fa-solid fa-times"></i></button>
+                </div>
+                <p class="text-xs opacity-60 mb-3" id="info-task-desc"></p>
+                <div class="info-security">
+                    <i class="fa-solid fa-lock"></i>
+                    <p id="info-security-text">Your data is encrypted and stored locally on this device. It never leaves this server and is only used to authenticate with the services you request. You can delete it anytime from Settings.</p>
+                </div>
+                <div id="info-fields"></div>
+                <button class="info-submit" onclick="submitInfo()">Proceed Securely</button>
+            </div>
+        </div>
+
+        <!-- SELF-IMPROVEMENT TOAST -->
+        <div class="evolve-toast" id="evolveToast">
+            <h4 id="evolve-title">Self-Improvement</h4>
+            <p id="evolve-text"></p>
+        </div>
+
+        <!-- FIXED INPUT BAR -->
+        <footer class="p-5 z-20">
+            <div class="glass rounded-full p-2 pl-4 flex items-center gap-3 border border-white/60 dark:border-white/20 shadow-xl">
+                <button onclick="toggleConnections()" class="w-9 h-9 rounded-full bg-black/5 dark:bg-white/10 flex items-center justify-center transition-colors text-base text-blue-500 hover:bg-black/10 dark:hover:bg-white/20" title="Connect Tools">
+                    <i class="fa-solid fa-link"></i>
+                </button>
+
+                <input type="text" id="chat-input" placeholder="Ask me anything..." class="bg-transparent flex-1 outline-none px-1 text-base placeholder-slate-500 dark:placeholder-slate-400 font-medium">
+
+                <button id="action-btn" class="w-12 h-12 rounded-full glass shadow-md flex items-center justify-center text-purple-600 dark:text-purple-400 text-lg active:scale-90 transition-all border border-white/80 dark:border-white/30 hover:bg-white/40" onclick="handleAction()">
+                    <i class="fa-solid fa-microphone" id="action-icon"></i>
+                </button>
+            </div>
+        </footer>
+
+    </div>
+
+    <script>
+        // ═══ STATE ═══
+        let isDarkMode = false;
+        let network = null;
+        let evtCount = 0;
+        const socket = io();
+        const graphNodes = new vis.DataSet();
+        const graphEdges = new vis.DataSet();
+        let nodeIdCounter = 10;
+
+        // ═══ SOCKET EVENTS ═══
+        socket.on('connect', () => {
+            addFeedItem('system', 'fa-plug', 'Connected', 'Real-time link established', '', false);
+        });
+        socket.on('state_update', (d) => {
+            updateOrb(d.status);
+        });
+        socket.on('agent_event', (payload) => {
+            evtCount++;
+            document.getElementById('eventCount').textContent = evtCount + ' events';
+            handleAgentEvent(payload);
+        });
+        socket.on('chat_response', (d) => {
+            addChatMessage('assistant', d.content);
+        });
+
+        // ═══ INFO REQUEST HANDLER ═══
+        let pendingTask = '';
+        socket.on('info_request', (d) => {
+            pendingTask = d.task;
+            document.getElementById('info-task-desc').textContent = d.task;
+            document.getElementById('info-security-text').textContent = d.security_note || 'Your data is encrypted and stored locally. It never leaves this server.';
+
+            const fieldsContainer = document.getElementById('info-fields');
+            fieldsContainer.innerHTML = '';
+            (d.requests || []).forEach(req => {
+                const div = document.createElement('div');
+                div.className = 'info-field';
+                let inputHtml = '';
+                if (req.type === 'textarea') {
+                    inputHtml = `<textarea id="info-${req.key}" placeholder="${req.placeholder || ''}" rows="3"></textarea>`;
+                } else if (req.type === 'select') {
+                    const opts = (req.options || []).map(o => `<option value="${o}">${o}</option>`).join('');
+                    inputHtml = `<select id="info-${req.key}">${opts}</select>`;
+                } else {
+                    inputHtml = `<input type="${req.type || 'text'}" id="info-${req.key}" placeholder="${req.placeholder || ''}">`;
+                }
+                div.innerHTML = `<label>${req.label}</label>${inputHtml}${req.help ? `<div class="help-text">${req.help}</div>` : ''}`;
+                fieldsContainer.appendChild(div);
+            });
+
+            document.getElementById('info-request-overlay').classList.add('active');
+        });
+
+        // ═══ SELF-IMPROVEMENT HANDLER ═══
+        socket.on('self_improvement', (d) => {
+            const perf = d.performance || {};
+            const analysis = d.analysis || {};
+            const findings = analysis.findings || [];
+            const stage = perf.evolution_stage || '';
+
+            const title = stage || 'Self-Improvement Complete';
+            const text = findings.length > 0 ? findings[findings.length - 1] : `Run analyzed. ${perf.success_rate || ''} success rate across ${perf.total_runs || 0} runs.`;
+
+            document.getElementById('evolve-title').textContent = title;
+            document.getElementById('evolve-text').textContent = text;
+
+            const toast = document.getElementById('evolveToast');
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 5000);
+        });
+
+        // ═══ AGENT EVENT HANDLER ═══
+        function handleAgentEvent(payload) {
+            const { event_type: t, data: d } = payload;
+            const tm = new Date(payload.timestamp).toLocaleTimeString();
+
+            switch (t) {
+                case 'agent_start':
+                    updateOrb('running');
+                    clearFeed();
+                    addFeedItem('system', 'fa-rocket', 'Agent Launched', d.goal || 'Starting task...', '', true, `<b>Goal:</b> ${d.goal}\n<b>Status:</b> Running\n<b>Model:</b> Llama 3.3 70B via Groq`);
+                    switchView('preview');
+                    initNetwork();
+                    break;
+
+                case 'iteration_start':
+                    updateOrb('thinking');
+                    addFeedItem('system', 'fa-repeat', `Iteration ${d.iteration}/${d.max_iterations || 15}`, 'New reasoning cycle started', tm, false,
+                        `<b>Phase:</b> Thought\n<b>Model:</b> Task Manager (Llama 3.3 70B)\n<b>Max Iterations:</b> ${d.max_iterations || 15}`);
+                    break;
+
+                case 'thinking':
+                    updateOrb('thinking');
+                    addFeedItem('think', 'fa-brain', 'Thought', 'Analyzing current situation and planning next step...', tm, false,
+                        `<b>Phase:</b> Analyze\nThe agent is evaluating what it knows, what information it still needs, and determining the optimal next action to move toward its goal.`);
+                    break;
+
+                case 'model_response':
+                    const content = (d.content || '').substring(0, 200);
+                    addFeedItem('think', 'fa-lightbulb', 'Model Response', content, tm, false,
+                        `<b>Content:</b> ${d.content || '(none)'}\n<b>Tool Calls:</b> ${d.has_tool_calls ? 'Yes' : 'No'}\n<b>Model:</b> ${d.model_role || 'task_manager'}\n<b>Confidence:</b> ${d.confidence ? (d.confidence * 100).toFixed(0) + '%' : 'N/A'}`);
+                    // Add node to graph
+                    const modelLabel = d.model_role === 'task_manager' ? 'Llama 3.3 70B' : 'Gemini 2.5 Flash';
+                    const nid = nodeIdCounter++;
+                    graphNodes.add({ id: nid, label: modelLabel, size: 14 });
+                    graphEdges.add({ from: 1, to: nid });
+                    break;
+
+                case 'tool_decision':
+                    addFeedItem('action', 'fa-crosshairs', 'Decision', `Selected tool: ${d.tool_name}`, tm, false,
+                        `<b>Tool:</b> ${d.tool_name}\n<b>Reasoning:</b> ${d.reasoning || 'N/A'}\n<b>Arguments:</b> ${d.arguments || '{}'}`);
+                    break;
+
+                case 'tool_executing':
+                    updateOrb('executing');
+                    addFeedItem('action', 'fa-bolt', `Executing: ${d.tool_name}`, formatArgs(d.arguments), tm, false,
+                        `<b>Tool:</b> ${d.tool_name}\n<b>Arguments:</b> ${JSON.stringify(d.arguments, null, 2)}\n<b>Status:</b> Running...`);
+                    // Add tool node to graph
+                    const tnid = nodeIdCounter++;
+                    graphNodes.add({ id: tnid, label: d.tool_name, size: 13 });
+                    graphEdges.add({ from: nodeIdCounter - 2 >= 10 ? nodeIdCounter - 2 : 1, to: tnid });
+                    break;
+
+                case 'tool_result':
+                    const resultText = (d.result || '').substring(0, 200);
+                    addFeedItem('observe', 'fa-circle-check', `Result: ${d.tool_name}`, resultText, tm, false,
+                        `<b>Tool:</b> ${d.tool_name}\n<b>Result:</b> ${d.result || '(empty)'}\n<b>Duration:</b> ${d.elapsed_seconds || '?'}s`);
+                    break;
+
+                case 'observation':
+                    updateOrb('thinking');
+                    addFeedItem('observe', 'fa-eye', 'Observation', d.analysis || `Processed ${d.num_tool_results} result(s). Conversation: ${d.conversation_length} turns.`, tm, false,
+                        `<b>Results Processed:</b> ${d.num_tool_results || 0}\n<b>Conversation Length:</b> ${d.conversation_length || 0} turns\n<b>Phase:</b> Evaluate and plan next step`);
+                    break;
+
+                case 'agent_complete':
+                    updateOrb('idle');
+                    addFeedItem('complete', 'fa-check', 'Task Complete', d.summary || 'Goal accomplished', tm, true,
+                        `<b>Status:</b> Complete\n<b>Summary:</b> ${d.summary || 'All tasks done'}\n<b>Timestamp:</b> ${tm}`);
+                    break;
+
+                case 'report':
+                    addFeedItem('complete', 'fa-chart-bar', 'Execution Report',
+                        `Iterations: ${d.iterations} | Duration: ${d.elapsed_seconds}s | Turns: ${d.conversation_turns}`, tm, true,
+                        `<b>Goal:</b> ${d.goal}\n<b>Iterations:</b> ${d.iterations}\n<b>Duration:</b> ${d.elapsed_seconds}s\n<b>Completed:</b> ${d.completed}\n<b>Conversation Turns:</b> ${d.conversation_turns}\n<b>Summary:</b> ${d.summary || ''}`);
+                    break;
+
+                case 'error':
+                case 'iteration_error':
+                    updateOrb('error');
+                    addFeedItem('error', 'fa-triangle-exclamation', 'Error', d.error || 'Something went wrong', tm, true,
+                        `<b>Error:</b> ${d.error}\n<b>Type:</b> ${t}\n<b>Timestamp:</b> ${tm}\nThe agent will attempt self-correction.`);
+                    break;
+
+                default:
+                    addFeedItem('system', 'fa-circle-info', t, JSON.stringify(d).substring(0, 100), tm, false, JSON.stringify(d, null, 2));
+            }
+        }
+
+        // ═══ EXPANDABLE FEED ITEMS ═══
+        function addFeedItem(type, icon, label, text, time, highlight, detail) {
+            const feed = document.getElementById('liveFeed');
+            const empty = document.getElementById('feedEmpty');
+            if (empty) empty.remove();
+
+            const item = document.createElement('div');
+            item.className = 'feed-item' + (highlight ? ' expanded' : '');
+
+            let tags = '';
+            if (type === 'action') tags = '<span class="feed-tag tag-tool">TOOL</span>';
+            else if (type === 'think') tags = '<span class="feed-tag tag-phase">THOUGHT</span>';
+            else if (type === 'observe') tags = '<span class="feed-tag tag-ok">RESULT</span>';
+            else if (type === 'complete') tags = '<span class="feed-tag tag-ok">DONE</span>';
+
+            item.innerHTML = `
+                <div class="feed-header" onclick="toggleFeedItem(this)">
+                    <div class="feed-header-left">
+                        <div class="feed-icon ${type === 'think' ? 'think' : type === 'action' ? 'action' : type === 'observe' ? 'observe' : type === 'complete' ? 'complete' : type === 'error' ? 'error' : 'system'}">
+                            <i class="fa-solid ${icon}"></i>
+                        </div>
+                        <div>
+                            <div class="feed-label">${label} ${tags}</div>
+                            <div style="font-size:11px;opacity:0.6;margin-top:1px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(text)}</div>
+                        </div>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px">
+                        <span class="feed-time">${time}</span>
+                        <i class="fa-solid fa-chevron-down feed-chevron"></i>
+                    </div>
+                </div>
+                <div class="feed-detail">
+                    <div class="feed-detail-content">${escapeHtml(detail || text)}</div>
+                </div>
+            `;
+
+            feed.insertBefore(item, feed.firstChild);
+            // Keep max 40 items
+            while (feed.children.length > 40) feed.removeChild(feed.lastChild);
+        }
+
+        function toggleFeedItem(headerEl) {
+            headerEl.parentElement.classList.toggle('expanded');
+        }
+
+        function clearFeed() {
+            document.getElementById('liveFeed').innerHTML = '';
+        }
+
+        // ═══ ORB STATUS ═══
+        function updateOrb(status) {
+            const orb = document.getElementById('agent-orb');
+            const label = document.getElementById('orb-status');
+            orb.className = 'orb';
+            if (status === 'thinking') orb.classList.add('thinking');
+            else if (status === 'executing') orb.classList.add('executing');
+
+            const labels = {
+                idle: 'Idle \u2014 Ready',
+                running: 'Running',
+                thinking: 'Thinking...',
+                executing: 'Executing...',
+                error: 'Error \u2014 Retrying'
+            };
+            label.textContent = labels[status] || status;
+        }
+
+        // ═══ CHAT MESSAGES ═══
+        function addChatMessage(role, content) {
+            const container = document.getElementById('chatMessages');
+            const msg = document.createElement('div');
+            msg.className = 'chat-msg ' + role;
+            const avIcon = role === 'user' ? 'fa-user' : 'fa-robot';
+            msg.innerHTML = `
+                <div class="chat-avatar"><i class="fa-solid ${avIcon}"></i></div>
+                <div class="chat-bubble">${escapeHtml(content)}</div>
+            `;
+            container.appendChild(msg);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        // ═══ INPUT / SEND / AUDIO BUTTON ═══
+        const inputField = document.getElementById('chat-input');
+        const actionBtn = document.getElementById('action-btn');
+        const actionIcon = document.getElementById('action-icon');
+
+        inputField.addEventListener('input', (e) => {
+            if (e.target.value.trim().length > 0) {
+                actionIcon.className = 'fa-solid fa-paper-plane';
+                actionBtn.classList.remove('text-purple-600', 'dark:text-purple-400');
+                actionBtn.classList.add('text-blue-600', 'dark:text-blue-400');
+            } else {
+                actionIcon.className = 'fa-solid fa-microphone';
+                actionBtn.classList.remove('text-blue-600', 'dark:text-blue-400');
+                actionBtn.classList.add('text-purple-600', 'dark:text-purple-400');
+            }
+        });
+
+        inputField.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && inputField.value.trim()) {
+                handleAction();
+            }
+        });
+
+        function handleAction() {
+            const msg = inputField.value.trim();
+            if (msg) {
+                // Send mode: send the chat message
+                addChatMessage('user', msg);
+                socket.emit('send_chat', { message: msg });
+                inputField.value = '';
+                actionIcon.className = 'fa-solid fa-microphone';
+                actionBtn.classList.remove('text-blue-600', 'dark:text-blue-400');
+                actionBtn.classList.add('text-purple-600', 'dark:text-purple-400');
+            } else {
+                // Audio mode: toggle listening state (visual feedback)
+                actionIcon.className = 'fa-solid fa-microphone-lines';
+                actionBtn.classList.add('text-red-500');
+                actionBtn.classList.remove('text-purple-600', 'dark:text-purple-400');
+                setTimeout(() => {
+                    actionIcon.className = 'fa-solid fa-microphone';
+                    actionBtn.classList.remove('text-red-500');
+                    actionBtn.classList.add('text-purple-600', 'dark:text-purple-400');
+                }, 2000);
+            }
+        }
+
+        // ═══ LAUNCH HELPERS ═══
+        function launchGoal(goal) {
+            inputField.value = '';
+            handleActionReset();
+            fetch('/api/start', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ goal: goal, demo: true })
+            }).then(r => r.json()).then(d => {
+                if (d.error) {
+                    addChatMessage('assistant', 'Error: ' + d.error);
+                } else {
+                    addChatMessage('assistant', 'Agent launched. Switch to Preview to watch the live execution.');
+                }
+            });
+        }
+
+        function launchDemo() {
+            launchGoal('Check for new client inquiries, draft professional responses, update CRM records, and log all completed tasks.');
+        }
+
+        function handleActionReset() {
+            actionIcon.className = 'fa-solid fa-microphone';
+            actionBtn.classList.remove('text-blue-600', 'dark:text-blue-400', 'text-red-500');
+            actionBtn.classList.add('text-purple-600', 'dark:text-purple-400');
+        }
+
+        // ═══ THEME ═══
+        function toggleTheme() {
+            isDarkMode = !isDarkMode;
+            document.body.classList.toggle('dark-mode');
+            const icon = document.getElementById('theme-icon');
+            icon.className = isDarkMode ? 'fa-solid fa-sun' : 'fa-solid fa-moon';
+            if (network) updateNetworkTheme();
+        }
+
+        // ═══ MODALS ═══
+        function toggleSettings() {
+            document.getElementById('settings-menu').classList.toggle('active');
+        }
+        function toggleConnections() {
+            document.getElementById('connections-menu').classList.toggle('active');
+        }
+        function closeModals(e) {
+            document.getElementById('settings-menu').classList.remove('active');
+            document.getElementById('connections-menu').classList.remove('active');
+        }
+
+        // ═══ INFO MODAL ═══
+        function closeInfoModal(e) {
+            if (e && e.target && !e.target.classList.contains('info-modal-overlay')) return;
+            document.getElementById('info-request-overlay').classList.remove('active');
+        }
+
+        function submitInfo() {
+            // Collect all field values
+            const credentials = {};
+            const fields = document.querySelectorAll('#info-fields input, #info-fields textarea, #info-fields select');
+            fields.forEach(f => {
+                const key = f.id.replace('info-', '');
+                credentials[key] = f.value;
+            });
+
+            // Send to backend
+            fetch('/api/task/execute', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ task: pendingTask, credentials: credentials })
+            }).then(r => r.json()).then(d => {
+                document.getElementById('info-request-overlay').classList.remove('active');
+                if (d.status === 'started') {
+                    addChatMessage('assistant', 'Credentials received and stored securely. Launching the task now...');
+                } else if (d.error) {
+                    addChatMessage('assistant', 'Error: ' + d.error);
+                } else {
+                    addChatMessage('assistant', 'Task queued. Starting execution...');
+                }
+            }).catch(err => {
+                addChatMessage('assistant', 'Failed to submit: ' + err);
+            });
+        }
+
+        // ═══ VIEW SWITCH ═══
+        function switchView(view) {
+            const chatTab = document.getElementById('chat-tab');
+            const previewTab = document.getElementById('preview-tab');
+            const btnChat = document.getElementById('btn-chat');
+            const btnPreview = document.getElementById('btn-preview');
+
+            if (view === 'chat') {
+                chatTab.classList.add('active');
+                previewTab.classList.remove('active');
+                btnChat.classList.add('bg-white/60', 'dark:bg-white/20');
+                btnChat.classList.remove('text-slate-500', 'dark:text-slate-400');
+                btnPreview.classList.remove('bg-white/60', 'dark:bg-white/20');
+                btnPreview.classList.add('text-slate-500', 'dark:text-slate-400');
+            } else {
+                previewTab.classList.add('active');
+                chatTab.classList.remove('active');
+                btnPreview.classList.add('bg-white/60', 'dark:bg-white/20');
+                btnPreview.classList.remove('text-slate-500', 'dark:text-slate-400');
+                btnChat.classList.remove('bg-white/60', 'dark:bg-white/20');
+                btnChat.classList.add('text-slate-500', 'dark:text-slate-400');
+                if (!network) setTimeout(initNetwork, 150);
+            }
+        }
+
+        // ═══ NETWORK GRAPH ═══
+        function getNetworkColors() {
+            return isDarkMode ? {
+                nodeBg: 'rgba(30, 41, 59, 0.5)',
+                nodeBorder: 'rgba(255, 255, 255, 0.2)',
+                font: '#f8fafc',
+                edge: 'rgba(196, 181, 253, 0.5)',
+                shadow: 'rgba(0,0,0,0.4)'
+            } : {
+                nodeBg: 'rgba(255, 255, 255, 0.5)',
+                nodeBorder: 'rgba(255, 255, 255, 0.9)',
+                font: '#1e293b',
+                edge: 'rgba(139, 92, 246, 0.4)',
+                shadow: 'rgba(0,0,0,0.1)'
+            };
+        }
+
+        function initNetwork() {
+            const container = document.getElementById('network-container');
+            if (!container || container.clientHeight < 10) return;
+
+            graphNodes.clear();
+            graphEdges.clear();
+            nodeIdCounter = 10;
+
+            graphNodes.add([
+                { id: 1, label: 'Agent Core', size: 22 },
+                { id: 2, label: 'Groq\nLlama 3.3 70B', size: 15 },
+                { id: 3, label: 'OpenRouter\nGemini 2.5', size: 15 },
+                { id: 4, label: 'Tools', size: 15 },
+                { id: 5, label: 'Memory\nStore', size: 14 }
+            ]);
+            graphEdges.add([
+                { from: 1, to: 2 },
+                { from: 1, to: 3 },
+                { from: 1, to: 4 },
+                { from: 1, to: 5 },
+                { from: 4, to: 5 }
+            ]);
+
+            const colors = getNetworkColors();
+            network = new vis.Network(container, { nodes: graphNodes, edges: graphEdges }, {
+                nodes: {
+                    shape: 'box',
+                    margin: { top: 16, bottom: 16, left: 24, right: 24 },
+                    borderWidth: 1.5,
+                    color: { background: colors.nodeBg, border: colors.nodeBorder },
+                    font: { color: colors.font, face: '-apple-system, BlinkMacSystemFont, "Segoe UI"', size: 13, bold: true },
+                    shapeProperties: { borderRadius: 16 },
+                    shadow: { enabled: true, color: colors.shadow, size: 20, x: 0, y: 8 }
+                },
+                edges: {
+                    width: 2.5,
+                    color: { color: colors.edge },
+                    smooth: { type: 'continuous' }
+                },
+                physics: {
+                    enabled: true,
+                    solver: 'forceAtlas2Based',
+                    forceAtlas2Based: {
+                        gravitationalConstant: -20,
+                        centralGravity: 0.003,
+                        springLength: 150,
+                        springConstant: 0.02,
+                        damping: 0.95
+                    },
+                    maxVelocity: 1,
+                    minVelocity: 0.1,
+                    timestep: 0.3
+                },
+                interaction: {
+                    dragNodes: true,
+                    zoomView: false,
+                    dragView: false
+                }
+            });
+        }
+
+        function updateNetworkTheme() {
+            if (network) {
+                const colors = getNetworkColors();
+                network.setOptions({
+                    nodes: {
+                        color: { background: colors.nodeBg, border: colors.nodeBorder },
+                        font: { color: colors.font },
+                        shadow: { color: colors.shadow }
+                    },
+                    edges: { color: { color: colors.edge } }
+                });
+            }
+        }
+
+        // ═══ UTILS ═══
+        function escapeHtml(text) {
+            const d = document.createElement('div');
+            d.textContent = text || '';
+            return d.innerHTML;
+        }
+        function formatArgs(obj) {
+            if (typeof obj === 'string') {
+                try { obj = JSON.parse(obj); } catch { return obj; }
+            }
+            return JSON.stringify(obj, null, 0).substring(0, 120);
+        }
+    </script>
+</body>
+</html>

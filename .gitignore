@@ -1,0 +1,10 @@
+# Ignore local dev files
+.env
+__pycache__/
+*.pyc
+*.pyo
+
+# Keep reports and logs in git for auditing
+# (uncomment next two lines if you prefer not to)
+# reports/
+# logs/
