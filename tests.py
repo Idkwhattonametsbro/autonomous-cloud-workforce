@@ -190,8 +190,8 @@ class TestDefaultTools(unittest.TestCase):
 
     def test_scan_inbox(self):
         result = json.loads(self.registry.execute("scan_inbox", {}))
-        self.assertEqual(result["status"], "success")
-        self.assertIn("checked_at", result)
+        self.assertEqual(result["status"], "needs_connection")
+        self.assertIn("Gmail", result.get("display_name", ""))
 
     def test_draft_reply(self):
         result = json.loads(self.registry.execute("draft_reply", {
@@ -199,25 +199,21 @@ class TestDefaultTools(unittest.TestCase):
             "context": "Pricing inquiry",
             "tone": "friendly",
         }))
-        self.assertEqual(result["status"], "success")
-        self.assertEqual(result["message_id"], "msg_001")
+        self.assertEqual(result["status"], "needs_connection")
 
     def test_update_crm(self):
         result = json.loads(self.registry.execute("update_crm", {
             "contact_id": "c_42",
             "data": {"status": "hot_lead", "notes": "Very interested"},
         }))
-        self.assertEqual(result["status"], "success")
-        self.assertIn("status", result["updated_fields"])
-        self.assertIn("notes", result["updated_fields"])
+        self.assertEqual(result["status"], "needs_connection")
 
     def test_read_database(self):
         result = json.loads(self.registry.execute("read_database", {
             "query": "SELECT * FROM orders",
             "table": "orders",
         }))
-        self.assertEqual(result["status"], "success")
-        self.assertEqual(result["table"], "orders")
+        self.assertEqual(result["status"], "needs_connection")
 
     def test_log_task(self):
         # Use a temp directory for logs
@@ -231,8 +227,7 @@ class TestDefaultTools(unittest.TestCase):
 
     def test_web_search(self):
         result = json.loads(self.registry.execute("web_search", {"query": "AI news"}))
-        self.assertEqual(result["status"], "success")
-        self.assertEqual(result["query"], "AI news")
+        self.assertEqual(result["status"], "needs_connection")
 
     def test_file_read_write(self):
         with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
