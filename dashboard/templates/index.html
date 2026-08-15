@@ -290,15 +290,37 @@
 </div>
 
 <script>
+// ═══ PERFORMANCE OPTIMIZATIONS ═══
+// Debounce utility
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
+
+// ═══ GLOBAL STATE ═══
 let isDark=false,net=null,fsNet=null,evtN=0,pendingConnTool=null,pendingConfirm=null;
-// Auto-detect SocketIO URL (works with proxy)
+
+// Auto-detect API URL - MUST BE DEFINED BEFORE USE
+const API_BASE = window.location.hostname.includes('github.io') 
+    ? window.location.origin  // Use same origin for GitHub Pages
+    : window.location.origin;
+
+// ═══ SOCKET.IO (optimized) ═══
 const socketUrl = window.location.origin;
 const socket = io(socketUrl, {
     transports: ['websocket', 'polling'],
     reconnection: true,
-    reconnectionDelay: 1000,
-    reconnectionAttempts: 5
+    reconnectionDelay: 2000,  // Increased from 1000ms
+    reconnectionAttempts: 3   // Reduced from 5
 });
+
 const gN=new vis.DataSet(),gE=new vis.DataSet(),fN=new vis.DataSet(),fE=new vis.DataSet();
 let nID=10;
 
@@ -481,13 +503,28 @@ function closeModals(e){if(e.target.classList.contains('modal-ov')){document.get
 // ═══ INPUT / SEND / VOICE ═══
 const inp=document.getElementById('inp'),micBtn=document.getElementById('mic-btn'),micIcon=document.getElementById('mic-icon');
 let rec=null,listening=false;
-inp.addEventListener('input',()=>{if(inp.value.trim()){micIcon.className='fa-solid fa-paper-plane';micBtn.classList.add('has-text')}else{micIcon.className='fa-solid fa-microphone';micBtn.classList.remove('has-text')}});
+inp.addEventListener('input', debounce(function() {
+    if(inp.value.trim()){
+        micIcon.style.transition = 'transform 0.2s ease';
+        micIcon.style.transform = 'scale(0.8)';
+        setTimeout(() => {
+            micIcon.className='fa-solid fa-paper-plane';
+            micBtn.classList.add('has-text');
+            micIcon.style.transform = 'scale(1)';
+        }, 100);
+    } else {
+        micIcon.style.transition = 'transform 0.2s ease';
+        micIcon.style.transform = 'scale(0.8)';
+        setTimeout(() => {
+            micIcon.className='fa-solid fa-microphone';
+            micBtn.classList.remove('has-text');
+            micIcon.style.transform = 'scale(1)';
+        }, 100);
+    }
+}, 150));
 inp.addEventListener('keypress',e=>{if(e.key==='Enter'&&inp.value.trim())handleAction()});
 
-// Auto-detect API URL
-const API_BASE = window.location.hostname.includes('github.io') 
-    ? 'https://your-backend-url.com'  // TODO: Replace with your actual backend URL
-    : window.location.origin;
+
 
 function handleAction(){
     const m=inp.value.trim();
@@ -528,7 +565,7 @@ function pollForResponse(message){
         attempts++;
         
         // Check for response
-        fetch(`${API_BASE}/api/chat/history')
+        fetch(`${API_BASE}/api/chat/history`)
             .then(r=>r.json())
             .then(history=>{
                 // Find if there's a new assistant message
@@ -654,7 +691,7 @@ function showAgentInfo(){
 
 function showProgress(){
     toggleSidebar();
-    fetch(`${API_BASE}/api/self-improve/status').then(r=>r.json()).then(d=>{
+    fetch(`${API_BASE}/api/self-improve/status`).then(r=>r.json()).then(d=>{
         const p=d.performance||{};
         addMsg('a',`**Performance Stats:**\n\n• Total runs: ${p.total_runs||0}\n• Success rate: ${p.success_rate||'N/A'}\n• Avg duration: ${p.avg_duration||'N/A'}\n• Stage: ${p.evolution_stage||'Initial'}\n\nI'm continuously learning and improving my strategies.`);
         switchView('chat');
