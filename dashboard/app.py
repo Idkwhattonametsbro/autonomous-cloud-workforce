@@ -24,6 +24,7 @@ sys.path.insert(0, PROJECT_ROOT)
 
 from flask import Flask, render_template, jsonify, request, session, redirect
 from flask_socketio import SocketIO, emit
+from flask_cors import CORS
 
 from src.config import AppConfig
 from src.tools import create_default_registry
@@ -45,6 +46,10 @@ logger = logging.getLogger("dashboard")
 app = Flask(__name__,
             template_folder=os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates"),
             static_folder=os.path.join(os.path.dirname(os.path.abspath(__file__)), "static"))
+
+# Enable CORS for all routes
+CORS(app, resources={r"/api/*": {"origins": "*"}}, supports_credentials=True)
+
 app.config["SECRET_KEY"] = os.getenv("DASHBOARD_SECRET", "dev-secret-change-me")
 
 # Auth config
