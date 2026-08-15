@@ -381,6 +381,55 @@
         .evolve-toast h4 { font-size: 12px; font-weight: 700; color: #c4b5fd; margin: 0 0 4px; }
         .evolve-toast p { font-size: 11px; color: rgba(255,255,255,0.6); margin: 0; line-height: 1.4; }
 
+        /* === KEYBOARD SHORTCUTS OVERLAY === */
+        .kbd-overlay {
+            position: fixed; inset: 0; z-index: 250;
+            background: rgba(0,0,0,0.3);
+            display: flex; align-items: center; justify-content: center;
+            opacity: 0; pointer-events: none; transition: opacity 0.2s;
+        }
+        .dark-mode .kbd-overlay { background: rgba(0,0,0,0.6); }
+        .kbd-overlay.active { opacity: 1; pointer-events: all; }
+        .kbd-panel {
+            background: rgba(255,255,255,0.75); backdrop-filter: blur(30px);
+            border: 1px solid rgba(255,255,255,0.5); border-radius: 20px;
+            padding: 24px; width: 90%; max-width: 340px;
+        }
+        .dark-mode .kbd-panel { background: rgba(15,23,42,0.85); border-color: rgba(255,255,255,0.1); }
+        .kbd-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; }
+        .kbd-key {
+            display: inline-block; padding: 3px 8px; border-radius: 5px;
+            background: rgba(128,128,128,0.1); border: 1px solid rgba(128,128,128,0.2);
+            font-family: 'SF Mono', monospace; font-size: 11px; font-weight: 600;
+        }
+        .kbd-desc { font-size: 12px; opacity: 0.7; }
+
+        /* === EXECUTION TIMELINE === */
+        .timeline {
+            display: flex; flex-direction: column; gap: 4px;
+            padding: 0 20px; margin-top: 8px;
+        }
+        .tl-row {
+            display: flex; align-items: center; gap: 8px;
+            font-size: 10px;
+        }
+        .tl-label { width: 60px; text-align: right; opacity: 0.5; flex-shrink: 0; }
+        .tl-bar-wrap { flex: 1; height: 14px; background: rgba(128,128,128,0.08); border-radius: 4px; overflow: hidden; position: relative; }
+        .tl-bar {
+            height: 100%; border-radius: 4px;
+            background: linear-gradient(90deg, #8b5cf6, #3b82f6);
+            transition: width 0.5s ease;
+            min-width: 2px;
+        }
+        .tl-time { width: 40px; font-size: 9px; opacity: 0.4; }
+
+        /* === VOICE INDICATOR === */
+        .voice-active { animation: voicePulse 0.8s ease-in-out infinite !important; }
+        @keyframes voicePulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.4); }
+            50% { box-shadow: 0 0 0 8px rgba(239,68,68,0); }
+        }
+
         /* Chat messages in chat tab */
         .chat-messages {
             display: flex;
@@ -504,6 +553,13 @@
                         Launch an agent task to see live activity here.
                     </div>
                 </div>
+
+                <div class="px-5 mt-4 mb-2">
+                    <h3 class="text-sm font-bold tracking-tight">Execution Timeline</h3>
+                </div>
+                <div class="timeline" id="timeline">
+                    <div class="text-center py-4 opacity-30 text-xs" id="timelineEmpty">Timeline will appear during execution.</div>
+                </div>
             </div>
 
         </main>
@@ -554,6 +610,21 @@
                         <input type="checkbox" class="w-4 h-4 rounded text-blue-500">
                     </label>
                 </div>
+            </div>
+        </div>
+
+        <!-- KEYBOARD SHORTCUTS OVERLAY -->
+        <div class="kbd-overlay" id="kbdOverlay" onclick="this.classList.remove('active')">
+            <div class="kbd-panel" onclick="event.stopPropagation()">
+                <h3 style="font-size:15px;font-weight:700;margin-bottom:12px">Keyboard Shortcuts</h3>
+                <div class="kbd-row"><span class="kbd-desc">Focus chat</span><span class="kbd-key">/</span></div>
+                <div class="kbd-row"><span class="kbd-desc">Launch agent</span><span class="kbd-key">R</span></div>
+                <div class="kbd-row"><span class="kbd-desc">Run demo</span><span class="kbd-key">D</span></div>
+                <div class="kbd-row"><span class="kbd-desc">Switch to Preview</span><span class="kbd-key">P</span></div>
+                <div class="kbd-row"><span class="kbd-desc">Switch to Chat</span><span class="kbd-key">C</span></div>
+                <div class="kbd-row"><span class="kbd-desc">Toggle dark mode</span><span class="kbd-key">T</span></div>
+                <div class="kbd-row"><span class="kbd-desc">Show shortcuts</span><span class="kbd-key">?</span></div>
+                <div class="kbd-row"><span class="kbd-desc">Close</span><span class="kbd-key">Esc</span></div>
             </div>
         </div>
 
@@ -1095,6 +1166,245 @@
             }
             return JSON.stringify(obj, null, 0).substring(0, 120);
         }
+
+        // ═══ VOICE INPUT (Web Speech API) ═══
+        let recognition = null;
+        let isListening = false;
+
+        function initVoice() {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SpeechRecognition) return;
+            recognition = new SpeechRecognition();
+            recognition.continuous = false;
+            recognition.interimResults = false;
+            recognition.lang = 'en-US';
+
+            recognition.onresult = (event) => {
+                const text = event.results[0][0].transcript;
+                inputField.value = text;
+                onInput();
+                stopVoice();
+            };
+            recognition.onerror = () => stopVoice();
+            recognition.onend = () => stopVoice();
+        }
+
+        function toggleVoice() {
+            if (!recognition) {
+                initVoice();
+                if (!recognition) return; // Not supported
+            }
+            if (isListening) {
+                stopVoice();
+            } else {
+                isListening = true;
+                actionBtn.classList.add('voice-active');
+                actionIcon.className = 'fa-solid fa-microphone-lines';
+                actionBtn.classList.add('text-red-500');
+                actionBtn.classList.remove('text-purple-600', 'dark:text-purple-400');
+                try { recognition.start(); } catch(e) { stopVoice(); }
+            }
+        }
+
+        function stopVoice() {
+            isListening = false;
+            actionBtn.classList.remove('voice-active');
+            actionBtn.classList.remove('text-red-500');
+            if (inputField.value.trim()) {
+                actionIcon.className = 'fa-solid fa-paper-plane';
+                actionBtn.classList.add('text-blue-600', 'dark:text-blue-400');
+            } else {
+                actionIcon.className = 'fa-solid fa-microphone';
+                actionBtn.classList.add('text-purple-600', 'dark:text-purple-400');
+            }
+            try { recognition.stop(); } catch(e) {}
+        }
+
+        // Update handleAction to use voice when empty
+        const originalHandleAction = handleAction;
+        handleAction = function() {
+            const msg = inputField.value.trim();
+            if (msg) {
+                originalHandleAction();
+            } else {
+                toggleVoice();
+            }
+        };
+
+        // ═══ NOTIFICATION SOUNDS ═══
+        let audioCtx = null;
+
+        function playSound(type) {
+            try {
+                if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+
+                if (type === 'complete') {
+                    osc.frequency.value = 800;
+                    gain.gain.value = 0.1;
+                    osc.start();
+                    osc.frequency.setValueAtTime(1200, audioCtx.currentTime + 0.1);
+                    gain.gain.setValueAtTime(0, audioCtx.currentTime + 0.3);
+                    osc.stop(audioCtx.currentTime + 0.3);
+                } else if (type === 'error') {
+                    osc.frequency.value = 300;
+                    gain.gain.value = 0.1;
+                    osc.start();
+                    osc.frequency.setValueAtTime(200, audioCtx.currentTime + 0.15);
+                    gain.gain.setValueAtTime(0, audioCtx.currentTime + 0.3);
+                    osc.stop(audioCtx.currentTime + 0.3);
+                } else if (type === 'tick') {
+                    osc.frequency.value = 600;
+                    gain.gain.value = 0.03;
+                    osc.start();
+                    gain.gain.setValueAtTime(0, audioCtx.currentTime + 0.05);
+                    osc.stop(audioCtx.currentTime + 0.05);
+                }
+            } catch(e) {}
+        }
+
+        // ═══ MARKDOWN RENDERING ═══
+        function renderMarkdown(text) {
+            if (!text) return '';
+            let html = escapeHtml(text);
+            // Bold
+            html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+            // Italic
+            html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+            // Inline code
+            html = html.replace(/`(.+?)`/g, '<code style="background:rgba(128,128,128,0.1);padding:1px 4px;border-radius:3px;font-size:12px">$1</code>');
+            // Line breaks
+            html = html.replace(/\n/g, '<br>');
+            return html;
+        }
+
+        // Override addChatMessage to use markdown
+        const originalAddChatMessage = addChatMessage;
+        addChatMessage = function(role, content) {
+            const container = document.getElementById('chatMessages');
+            const msg = document.createElement('div');
+            msg.className = 'chat-msg ' + role;
+            const avIcon = role === 'user' ? 'fa-user' : 'fa-robot';
+            msg.innerHTML = `
+                <div class="chat-avatar"><i class="fa-solid ${avIcon}"></i></div>
+                <div class="chat-bubble">${renderMarkdown(content)}</div>
+            `;
+            container.appendChild(msg);
+            container.scrollTop = container.scrollHeight;
+        };
+
+        // ═══ EXECUTION TIMELINE ═══
+        let timelineData = [];
+        let timelineStart = 0;
+
+        function addTimelineEntry(label, duration, type) {
+            const empty = document.getElementById('timelineEmpty');
+            if (empty) empty.remove();
+
+            timelineData.push({ label, duration, type, time: Date.now() });
+            renderTimeline();
+        }
+
+        function renderTimeline() {
+            const container = document.getElementById('timeline');
+            const maxDuration = Math.max(...timelineData.map(d => d.duration), 1);
+
+            container.innerHTML = timelineData.map(d => {
+                const pct = Math.max((d.duration / maxDuration) * 100, 2);
+                const color = d.type === 'think' ? '#8b5cf6' :
+                              d.type === 'action' ? '#f59e0b' :
+                              d.type === 'observe' ? '#06b6d4' : '#10b981';
+                return `
+                    <div class="tl-row">
+                        <span class="tl-label">${d.label}</span>
+                        <div class="tl-bar-wrap">
+                            <div class="tl-bar" style="width:${pct}%;background:${color}"></div>
+                        </div>
+                        <span class="tl-time">${d.duration.toFixed(1)}s</span>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function clearTimeline() {
+            timelineData = [];
+            document.getElementById('timeline').innerHTML = '<div class="text-center py-4 opacity-30 text-xs">Timeline will appear during execution.</div>';
+        }
+
+        // ═══ KEYBOARD SHORTCUTS ═══
+        document.addEventListener('keydown', (e) => {
+            // Don't trigger when typing in input fields
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+                if (e.key === 'Escape') {
+                    e.target.blur();
+                }
+                return;
+            }
+
+            switch(e.key) {
+                case '/':
+                    e.preventDefault();
+                    inputField.focus();
+                    break;
+                case 'r': case 'R':
+                    launchDemo();
+                    break;
+                case 'd': case 'D':
+                    launchDemo();
+                    break;
+                case 'p': case 'P':
+                    switchView('preview');
+                    break;
+                case 'c': case 'C':
+                    switchView('chat');
+                    break;
+                case 't': case 'T':
+                    toggleTheme();
+                    break;
+                case '?':
+                    document.getElementById('kbdOverlay').classList.toggle('active');
+                    break;
+                case 'Escape':
+                    document.getElementById('kbdOverlay').classList.remove('active');
+                    closeAllModals();
+                    break;
+            }
+        });
+
+        function closeAllModals() {
+            document.getElementById('settings-menu').classList.remove('active');
+            document.getElementById('connections-menu').classList.remove('active');
+            document.getElementById('info-request-overlay').classList.remove('active');
+        }
+
+        // ═══ INTEGRATE TIMELINE + SOUNDS INTO EVENT HANDLER ═══
+        const originalHandleAgentEvent = handleAgentEvent;
+        handleAgentEvent = function(payload) {
+            const { event_type: t, data: d } = payload;
+
+            // Play sounds
+            if (t === 'agent_complete') playSound('complete');
+            else if (t === 'error' || t === 'iteration_error') playSound('error');
+            else if (t === 'tool_executing') playSound('tick');
+
+            // Timeline entries
+            if (t === 'tool_result' && d.elapsed_seconds) {
+                addTimelineEntry(d.tool_name, d.elapsed_seconds, 'action');
+            }
+            if (t === 'agent_start') {
+                clearTimeline();
+                timelineStart = Date.now();
+            }
+            if (t === 'iteration_start') {
+                addTimelineEntry(`Iter ${d.iteration}`, 0.3, 'think');
+            }
+
+            // Call original handler
+            originalHandleAgentEvent(payload);
+        };
     </script>
 </body>
 </html>

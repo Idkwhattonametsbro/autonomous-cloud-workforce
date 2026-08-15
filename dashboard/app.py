@@ -31,6 +31,12 @@ from src.agent import ReActAgent
 from dashboard.memory import MemoryStore
 from dashboard.analytics import AnalyticsStore
 from dashboard.self_improve import SelfImprover, TaskPlanner
+from src.intelligence import AdvancedIntelligence
+from src.memory_advanced import AdvancedMemory
+from src.infrastructure import (
+    RateLimiter, CircuitBreaker, AuditLog, StateExporter,
+    GracefulShutdown, ResourceMonitor, BatchProcessor, CostTracker
+)
 
 # ─── App Setup ───────────────────────────────────────────────
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -51,6 +57,18 @@ memory = MemoryStore()
 analytics = AnalyticsStore()
 improver = SelfImprover(memory)
 planner = TaskPlanner()
+
+# Advanced intelligence & infrastructure
+advanced_intel = AdvancedIntelligence(memory)
+advanced_memory = AdvancedMemory(memory)
+rate_limiter = RateLimiter(memory)
+circuit_breaker = CircuitBreaker(memory)
+audit_log = AuditLog(memory)
+state_exporter = StateExporter(memory, analytics)
+graceful_shutdown = GracefulShutdown(state_exporter)
+resource_monitor = ResourceMonitor()
+batch_processor = BatchProcessor(memory)
+cost_tracker = CostTracker(memory)
 
 # ─── Multi-Agent State ──────────────────────────────────────
 
@@ -529,6 +547,104 @@ def api_self_improve_analyze():
         return jsonify({"message": "No completed runs to analyze yet."})
     analysis = improver.analyze_run(last_report, events)
     return jsonify({"analysis": analysis, "performance": improver.get_performance_summary()})
+
+
+
+# ─── Infrastructure Endpoints ────────────────────────────────
+
+@app.route("/api/state/export")
+def api_state_export():
+    """Export the agent's full state."""
+    audit_log.log("state_export", {"action": "export"})
+    return jsonify(state_exporter.export_state())
+
+@app.route("/api/state/import", methods=["POST"])
+def api_state_import():
+    """Import agent state from JSON."""
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "No data provided"}), 400
+    result = state_exporter.import_state(data)
+    audit_log.log("state_import", {"memories_imported": result.get("memories_count", 0)})
+    return jsonify(result)
+
+@app.route("/api/audit-log")
+def api_audit_log():
+    """Get recent audit log entries."""
+    limit = request.args.get("limit", 50, type=int)
+    return jsonify(audit_log.get_recent(limit))
+
+@app.route("/api/costs")
+def api_costs():
+    """Get cost tracking report."""
+    return jsonify(cost_tracker.get_report())
+
+@app.route("/api/resources")
+def api_resources():
+    """Get resource usage report."""
+    resource_monitor.take_sample("dashboard")
+    return jsonify(resource_monitor.get_report())
+
+@app.route("/api/queue", methods=["GET", "POST"])
+def api_queue():
+    """Manage processing queues."""
+    queue_name = request.args.get("name", "default")
+    if request.method == "POST":
+        data = request.get_json() or {}
+        batch_processor.queue_item(data, queue_name)
+        return jsonify({"status": "queued", "queue_size": batch_processor.queue_size(queue_name)})
+    batch_size = request.args.get("batch", 5, type=int)
+    items = batch_processor.get_batch(queue_name, batch_size)
+    return jsonify({"items": items, "remaining": batch_processor.queue_size(queue_name)})
+
+@app.route("/api/circuit-breaker/<service>", methods=["GET", "POST", "DELETE"])
+def api_circuit_breaker(service):
+    """Manage circuit breakers."""
+    if request.method == "GET":
+        return jsonify({"open": circuit_breaker.is_open(service)})
+    elif request.method == "POST":
+        circuit_breaker.record_failure(service)
+        return jsonify({"status": "failure_recorded", "open": circuit_breaker.is_open(service)})
+    elif request.method == "DELETE":
+        circuit_breaker.reset(service)
+        return jsonify({"status": "reset"})
+
+@app.route("/api/memories/consolidate", methods=["POST"])
+def api_consolidate():
+    """Trigger memory consolidation."""
+    advanced_memory.consolidate_memories()
+    advanced_memory.apply_forgetting_curve()
+    return jsonify({"status": "consolidated"})
+
+@app.route("/api/memories/episodes", methods=["GET", "POST"])
+def api_episodes():
+    """Manage episodic memories."""
+    if request.method == "POST":
+        data = request.get_json() or {}
+        advanced_memory.store_episode(data)
+        return jsonify({"status": "stored"})
+    goal = request.args.get("goal", "")
+    if goal:
+        return jsonify(advanced_memory.recall_similar_episodes(goal))
+    return jsonify(advanced_memory._get_episodes())
+
+@app.route("/api/knowledge-graph")
+def api_knowledge_graph():
+    """Get or build the knowledge graph."""
+    advanced_memory.build_knowledge_graph()
+    graph_str = memory.recall("knowledge_graph", "graph")
+    return jsonify(json.loads(graph_str) if graph_str else {"nodes": [], "edges": []})
+
+@app.route("/api/performance")
+def api_performance():
+    """Get comprehensive performance report."""
+    return jsonify({
+        "self_improvement": improver.get_performance_summary(),
+        "costs": cost_tracker.get_report(),
+        "resources": resource_monitor.get_report(),
+        "analytics": analytics.get_dashboard_stats(),
+        "memory": memory.get_stats(),
+    })
 
 
 # ─── SocketIO ────────────────────────────────────────────────
