@@ -15,12 +15,12 @@
         :root{--bg:#f0f4ff;--bg1:#c4b5fd;--bg2:#fbcfe8;--glass:rgba(255,255,255,0.45);--glassb:rgba(255,255,255,0.6);--txt:#1e293b;--orb1:#8b5cf6;--orb2:#3b82f6}
         .dark-mode{--bg:#020617;--bg1:#1e1b4b;--bg2:#0f172a;--glass:rgba(15,23,42,0.5);--glassb:rgba(255,255,255,0.1);--txt:#f8fafc;--orb1:#c4b5fd;--orb2:#60a5fa}
         *{-webkit-tap-highlight-color:transparent}
-        body{background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;overflow:hidden;margin:0;height:100vh;display:flex;justify-content:center;transition:background .4s,color .4s}
-        .ambient{position:fixed;inset:0;z-index:0;background:radial-gradient(circle at 20% 40%,var(--bg1) 0%,transparent 60%),radial-gradient(circle at 80% 60%,var(--bg2) 0%,transparent 60%);filter:blur(70px);opacity:.8;transition:all .5s}
+        body{background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;overflow:hidden;margin:0;height:100dvh;height:100vh;display:flex;justify-content:center;transition:background .4s,color .4s}
+        .ambient{position:fixed;inset:0;z-index:0;background:radial-gradient(circle at 20% 40%,var(--bg1) 0%,transparent 60%),radial-gradient(circle at 80% 60%,var(--bg2) 0%,transparent 60%);filter:blur(70px);opacity:.8;transition:all .5s;height:100dvh;height:100vh}
         .glass{background:var(--glass);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);border:1px solid var(--glassb);box-shadow:0 8px 32px rgba(0,0,0,.05)}
         .glass-m{background:rgba(255,255,255,.75);backdrop-filter:blur(30px);-webkit-backdrop-filter:blur(30px);border:1px solid rgba(255,255,255,.5)}
         .dark-mode .glass-m{background:rgba(15,23,42,.85);border:1px solid rgba(255,255,255,.1)}
-        .app{width:100%;max-width:500px;height:100%;display:flex;flex-direction:column;position:relative;z-index:10}
+        .app{width:100%;max-width:500px;height:100dvh;height:100vh;display:flex;flex-direction:column;position:relative;z-index:10}
         .content{flex:1;position:relative;overflow:hidden;display:flex;flex-direction:column}
         .pane{position:absolute;inset:0;display:flex;flex-direction:column;opacity:0;pointer-events:none;transition:opacity .3s}
         .pane.active{opacity:1;pointer-events:all}
