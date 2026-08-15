@@ -326,15 +326,14 @@ def index():
 
 @app.route("/manifest.json")
 def manifest():
-    return jsonify({
-        "name": "Cloud Workforce Command Center",
-        "short_name": "Agent Dashboard",
-        "start_url": "/",
-        "display": "standalone",
-        "background_color": "#06060b",
-        "theme_color": "#4f8fff",
-        "icons": [{"src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png"}]
-    })
+    return app.send_static_file("manifest.json")
+
+@app.route("/sw.js")
+def service_worker():
+    resp = app.make_response(app.send_static_file("sw.js"))
+    resp.headers["Content-Type"] = "application/javascript"
+    resp.headers["Service-Worker-Allowed"] = "/"
+    return resp
 
 @app.route("/api/status")
 def api_status():
