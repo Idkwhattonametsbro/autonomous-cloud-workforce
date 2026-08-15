@@ -421,4 +421,11 @@ def create_default_registry() -> ToolRegistry:
         handler=_git_commit_and_push, category="system",
     )
 
+    # Register browser automation tools (real web search, browsing, progress tracking)
+    try:
+        from .browser_tools import register_browser_tools
+        register_browser_tools(registry)
+    except ImportError as e:
+        logger.warning(f"Browser tools not available: {e}")
+
     return registry
