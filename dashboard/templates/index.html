@@ -291,7 +291,14 @@
 
 <script>
 let isDark=false,net=null,fsNet=null,evtN=0,pendingConnTool=null,pendingConfirm=null;
-const socket=io();
+// Auto-detect SocketIO URL (works with proxy)
+const socketUrl = window.location.origin;
+const socket = io(socketUrl, {
+    transports: ['websocket', 'polling'],
+    reconnection: true,
+    reconnectionDelay: 1000,
+    reconnectionAttempts: 5
+});
 const gN=new vis.DataSet(),gE=new vis.DataSet(),fN=new vis.DataSet(),fE=new vis.DataSet();
 let nID=10;
 
@@ -308,7 +315,23 @@ const INTEGRATIONS = [
 ];
 
 // ═══ SOCKET ═══
-socket.on('connect',()=>{addFeed('system','fa-plug','Connected','Link established','',false)});
+let socketConnected = false;
+
+socket.on('connect', () => {
+    socketConnected = true;
+    console.log('SocketIO connected');
+    addFeed('system','fa-plug','Connected','Link established','',false);
+});
+
+socket.on('disconnect', () => {
+    socketConnected = false;
+    console.log('SocketIO disconnected');
+});
+
+socket.on('connect_error', (error) => {
+    console.error('SocketIO connection error:', error);
+    socketConnected = false;
+});
 socket.on('state_update',d=>{updateOrb(d.status)});
 socket.on('agent_event',p=>{evtN++;document.getElementById('evtCount').textContent=evtN;handleEvt(p)});
 socket.on('chat_response',d=>{hideTyping();addMsg('a',d.content)});
@@ -427,11 +450,46 @@ function handleAction(){
     if(m){
         addMsg('u',m);
         showTyping();
-        // Use HTTP POST for reliability
-        fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:m})})
-            .then(r=>r.json())
-            .then(d=>{hideTyping();addMsg('a',d.response||d.error||'No response')})
-            .catch(e=>{hideTyping();addMsg('a','Connection error. Please try again.')});
+        
+        // Try SocketIO first, fallback to HTTP
+        let responded = false;
+        const timeout = setTimeout(() => {
+            if(!responded){
+                // SocketIO timeout - try HTTP POST
+                fetch('/api/chat',{
+                    method:'POST',
+                    headers:{'Content-Type':'application/json'},
+                    body:JSON.stringify({message:m})
+                })
+                .then(r=>r.json())
+                .then(d=>{
+                    responded=true;
+                    hideTyping();
+                    addMsg('a',d.response||'No response');
+                })
+                .catch(e=>{
+                    responded=true;
+                    hideTyping();
+                    addMsg('a','Having trouble connecting. The agent is working but response delivery is slow. Try again.');
+                });
+            }
+        }, 2000);
+        
+        // Set up one-time listener for SocketIO response
+        const handler = (d) => {
+            if(!responded){
+                responded=true;
+                clearTimeout(timeout);
+                hideTyping();
+                addMsg('a',d.content||'No response');
+                socket.off('chat_response', handler);
+            }
+        };
+        socket.on('chat_response', handler);
+        
+        // Emit via SocketIO
+        socket.emit('send_chat',{message:m});
+        
         inp.value='';
         micIcon.className='fa-solid fa-microphone';
         micBtn.classList.remove('has-text');
