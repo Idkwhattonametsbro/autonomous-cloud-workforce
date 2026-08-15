@@ -28,12 +28,12 @@
         @keyframes br{0%,100%{transform:scale(1)}50%{transform:scale(1.04)}}
         .app{width:100%;max-width:500px;height:100%;display:flex;flex-direction:column;position:relative;z-index:10}
         .content{flex:1;position:relative;overflow:hidden}
-        .pane{position:absolute;inset:0;display:flex;flex-direction:column;opacity:0;pointer-events:none;transition:opacity .3s;overflow-y:auto;padding-bottom:16px;-webkit-overflow-scrolling:touch}
+        .pane{position:absolute;inset:0;display:flex;flex-direction:column;opacity:0;pointer-events:none;transition:opacity .3s;overflow-y:auto;-webkit-overflow-scrolling:touch}
         .pane.active{opacity:1;pointer-events:all}
         .orb-label{text-align:center;margin-top:8px;font-size:12px;font-weight:500;opacity:.55}
 
         /* Chat */
-        .msgs{display:flex;flex-direction:column;gap:8px;padding:0 20px;overflow-y:auto;-webkit-overflow-scrolling:touch;flex:1}
+        .msgs{display:flex;flex-direction:column;gap:8px;padding:0 20px;overflow-y:auto;-webkit-overflow-scrolling:touch}
         .msgs::-webkit-scrollbar{width:3px}.msgs::-webkit-scrollbar-thumb{background:var(--glassb);border-radius:4px}
         .msg{display:flex;gap:8px;animation:fi .2s ease}.msg.u{flex-direction:row-reverse}
         .msg-av{width:26px;height:26px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0}
@@ -138,16 +138,16 @@
     <!-- CONTENT -->
     <main class="content px-4">
         <!-- CHAT PANE -->
-        <div id="chat-pane" class="pane active">
-            <div class="text-center mt-4 mb-3">
+        <div id="chat-pane" class="pane active" style="display:flex;flex-direction:column">
+            <div class="text-center pt-5 pb-2 px-4" style="flex-shrink:0">
                 <h1 class="text-2xl font-bold tracking-tight">Hello</h1>
                 <p class="text-sm opacity-60 mt-1">What can I help you with?</p>
             </div>
-            <div class="flex justify-center items-center my-3">
+            <div class="flex justify-center items-center py-2" style="flex-shrink:0">
                 <div class="orb-c"><div class="orb" id="orb"><div class="orb-eye"></div><div class="orb-eye"></div></div></div>
             </div>
-            <div class="orb-label" id="orb-label">Idle</div>
-            <div class="msgs" id="msgs"></div>
+            <div class="orb-label" id="orb-label" style="flex-shrink:0">Idle</div>
+            <div class="msgs flex-1" id="msgs"></div>
         </div>
 
         <!-- PREVIEW PANE -->
@@ -217,12 +217,14 @@
     </div>
 
     <!-- INPUT BAR -->
-    <footer class="px-4 pb-4 pt-2 z-20">
+    <footer class="px-4 pb-3 pt-1 z-20">
         <div class="glass rounded-full input-bar">
+            <button class="bar-btn" onclick="triggerFileUpload()" title="Attach files"><i class="fa-solid fa-paperclip"></i></button>
             <button class="bar-btn accent" onclick="toggleConn()" title="Connect tools"><i class="fa-solid fa-link"></i></button>
             <input type="text" id="inp" placeholder="Ask me anything..." class="bg-transparent flex-1 outline-none text-sm font-medium placeholder-slate-400" style="min-width:0">
             <button id="mic-btn" class="mic-btn" onclick="handleAction()"><i class="fa-solid fa-microphone" id="mic-icon"></i></button>
         </div>
+        <input type="file" id="file-input" multiple style="display:none" onchange="handleFiles(this.files)">
     </footer>
 </div>
 
@@ -388,6 +390,27 @@ function toggleTheme(){isDark=!isDark;document.body.classList.toggle('dark-mode'
 
 // ═══ UTILS ═══
 function esc(t){const d=document.createElement('div');d.textContent=t||'';return d.innerHTML}
+
+// ═══ FILE UPLOAD ═══
+function triggerFileUpload(){document.getElementById('file-input').click()}
+function handleFiles(files){
+    if(!files||!files.length)return;
+    Array.from(files).forEach(f=>{
+        addMsg('u',`📎 ${f.name} (${(f.size/1024).toFixed(1)} KB)`);
+        // Read file and send to agent
+        const reader=new FileReader();
+        reader.onload=e=>{
+            socket.emit('send_chat',{message:`[File: ${f.name}]\n${e.target.result}`});
+        };
+        if(f.type.startsWith('text/')||f.name.endsWith('.json')||f.name.endsWith('.csv')||f.name.endsWith('.md')){
+            reader.readAsText(f);
+        }else{
+            reader.readAsDataURL(f);
+            setTimeout(()=>addMsg('a',`Received ${f.name}. I'll analyze it.`),300);
+        }
+    });
+    document.getElementById('file-input').value='';
+}
 </script>
 </body>
 </html>
