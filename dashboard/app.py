@@ -720,6 +720,32 @@ def handle_chat(data):
         emit("chat_response", {"content": resp, "timestamp": datetime.now(timezone.utc).isoformat()})
 
 
+@app.route("/api/connections")
+def api_connections():
+    """Get list of connected tools/services."""
+    connected = []
+    
+    # Check each integration
+    if memory.recall("gmail_address", "user_credentials"):
+        connected.append("gmail")
+    if memory.recall("github_token", "user_credentials"):
+        connected.append("github")
+    if memory.recall("groq_api_key", "user_credentials") or os.getenv("GROQ_API_KEY"):
+        connected.append("groq")
+    if memory.recall("openrouter_api_key", "user_credentials") or os.getenv("OPENROUTER_API_KEY"):
+        connected.append("openrouter")
+    if memory.recall("paypal_email", "user_credentials"):
+        connected.append("paypal")
+    if memory.recall("slack_webhook", "user_credentials"):
+        connected.append("slack")
+    if memory.recall("notion_token", "user_credentials"):
+        connected.append("notion")
+    if memory.recall("db_url", "user_credentials"):
+        connected.append("database")
+    
+    return jsonify({"connected": connected})
+
+
 # ─── Start ───────────────────────────────────────────────────
 
 if __name__ == "__main__":

@@ -321,6 +321,23 @@ socket.on('connect', () => {
     socketConnected = true;
     console.log('SocketIO connected');
     addFeed('system','fa-plug','Connected','Link established','',false);
+    
+    // Load connected tools status
+    fetch(`${API_BASE}/api/connections`)
+        .then(r=>r.json())
+        .then(d=>{
+            const connected = d.connected || [];
+            INTEGRATIONS.forEach(i => {
+                if(connected.includes(i.id)) {
+                    i.connected = true;
+                }
+            });
+            // Re-render if connections modal is open
+            if(document.getElementById('conn-modal').classList.contains('active')) {
+                renderConnList();
+            }
+        })
+        .catch(e=>console.error('Failed to load connections:', e));
 });
 
 socket.on('disconnect', () => {
@@ -397,7 +414,7 @@ function showConnRequest(d){
 }
 function submitConnRequest(task){
     const creds={};document.querySelectorAll('[id^="cr-"]').forEach(f=>{creds[f.id.replace('cr-','')]=f.value});
-    fetch('/api/task/execute',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({task,credentials:creds})}).then(r=>r.json()).then(d=>{addMsg('a','Credentials stored. Executing now...')}).catch(e=>addMsg('a','Error: '+e));
+    fetch(`${API_BASE}/api/task/execute',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({task,credentials:creds})}).then(r=>r.json()).then(d=>{addMsg('a','Credentials stored. Executing now...')}).catch(e=>addMsg('a','Error: '+e));
 }
 
 // ═══ CONFIRMATION (90/10 MODEL) ═══
@@ -408,13 +425,16 @@ function confirmAction(approved){document.getElementById('confirmOverlay').class
 function toggleConn(){document.getElementById('conn-modal').classList.toggle('active');renderConnList()}
 function renderConnList(){
     const list=document.getElementById('connList');
-    list.innerHTML=INTEGRATIONS.map(i=>`
-        <div onclick="openConnTool('${i.id}')" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:12px;cursor:pointer;transition:background .15s;border:1px solid transparent" onmouseover="this.style.background='rgba(128,128,128,.05)';this.style.borderColor='var(--glassb)'" onmouseout="this.style.background='transparent';this.style.borderColor='transparent'">
+    list.innerHTML=INTEGRATIONS.map(i=>{
+        const isConnected = i.connected || false;
+        const statusIcon = isConnected ? '<i class="fa-solid fa-circle-check" style="color:#10b981"></i>' : '<i class="fa-solid fa-circle" style="color:#6b7280"></i>';
+        return `
+        <div onclick="openConnTool('${i.id}')" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:12px;cursor:pointer;transition:background .15s;border:1px solid ${isConnected?'rgba(16,185,129,.2)':'transparent'};background:${isConnected?'rgba(16,185,129,.05)':'transparent'}" onmouseover="this.style.background='${isConnected?'rgba(16,185,129,.1)':'rgba(128,128,128,.05)'}'" onmouseout="this.style.background='${isConnected?'rgba(16,185,129,.05)':'transparent'}'">
             <div style="width:32px;height:32px;border-radius:8px;background:rgba(128,128,128,.08);display:flex;align-items:center;justify-content:center;color:${i.color}"><i class="fa-solid ${i.icon}"></i></div>
             <div style="flex:1"><div style="font-size:13px;font-weight:600">${i.name}</div><div style="font-size:10px;opacity:.5">${i.desc}</div></div>
-            <i class="fa-solid fa-chevron-right" style="font-size:10px;opacity:.3"></i>
+            ${statusIcon}
         </div>
-    `).join('');
+    `}).join('');
 }
 function openConnTool(id){
     const tool=INTEGRATIONS.find(i=>i.id===id);if(!tool)return;
@@ -431,11 +451,30 @@ function openConnTool(id){
 function closeConnTool(e){if(e&&e.target&&!e.target.classList.contains('modal-ov'))return;document.getElementById('connect-tool-modal').classList.remove('active')}
 function submitConnection(){
     if(!pendingConnTool)return;
-    const creds={};pendingConnTool.fields.forEach(f=>{const el=document.getElementById('ct-'+f.key);if(el)creds[f.key]=el.value});
-    fetch('/api/task/execute',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({task:`connect_${pendingConnTool.id}`,credentials:creds})}).then(r=>r.json()).then(d=>{
+    const creds={};
+    pendingConnTool.fields.forEach(f=>{
+        const el=document.getElementById('ct-'+f.key);
+        if(el)creds[f.key]=el.value;
+    });
+    
+    fetch(`${API_BASE}/api/task/execute`,{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({task:`connect_${pendingConnTool.id}`,credentials:creds})
+    })
+    .then(r=>r.json())
+    .then(d=>{
+        // Mark as connected in the INTEGRATIONS array
+        const tool = INTEGRATIONS.find(i=>i.id===pendingConnTool.id);
+        if(tool) tool.connected = true;
+        
         document.getElementById('connect-tool-modal').classList.remove('active');
         addMsg('a',`${pendingConnTool.name} connected successfully.`);
-    }).catch(e=>addMsg('a','Error: '+e));
+        
+        // Re-render the connections list to show the connected status
+        renderConnList();
+    })
+    .catch(e=>addMsg('a','Connection error: '+e.message));
 }
 function closeModals(e){if(e.target.classList.contains('modal-ov')){document.getElementById('conn-modal').classList.remove('active');document.getElementById('connect-tool-modal').classList.remove('active')}}
 
@@ -445,29 +484,32 @@ let rec=null,listening=false;
 inp.addEventListener('input',()=>{if(inp.value.trim()){micIcon.className='fa-solid fa-paper-plane';micBtn.classList.add('has-text')}else{micIcon.className='fa-solid fa-microphone';micBtn.classList.remove('has-text')}});
 inp.addEventListener('keypress',e=>{if(e.key==='Enter'&&inp.value.trim())handleAction()});
 
+// Auto-detect API URL
+const API_BASE = window.location.hostname.includes('github.io') 
+    ? 'https://your-backend-url.com'  // TODO: Replace with your actual backend URL
+    : window.location.origin;
+
 function handleAction(){
     const m=inp.value.trim();
     if(m){
         addMsg('u',m);
         showTyping();
         
-        // Send message and get message ID
-        fetch('/api/chat',{
+        // Send message to API
+        fetch(`${API_BASE}/api/chat`,{
             method:'POST',
             headers:{'Content-Type':'application/json'},
             body:JSON.stringify({message:m})
         })
         .then(r=>r.json())
         .then(d=>{
-            // Response received immediately
             hideTyping();
             addMsg('a',d.response||'No response');
         })
         .catch(e=>{
-            // If fetch fails, try polling approach
             hideTyping();
-            addMsg('a','Trying alternative connection method...');
-            pollForResponse(m);
+            addMsg('a','Connection error: '+e.message);
+            console.error('Chat error:', e);
         });
         
         inp.value='';
@@ -486,7 +528,7 @@ function pollForResponse(message){
         attempts++;
         
         // Check for response
-        fetch('/api/chat/history')
+        fetch(`${API_BASE}/api/chat/history')
             .then(r=>r.json())
             .then(history=>{
                 // Find if there's a new assistant message
@@ -612,7 +654,7 @@ function showAgentInfo(){
 
 function showProgress(){
     toggleSidebar();
-    fetch('/api/self-improve/status').then(r=>r.json()).then(d=>{
+    fetch(`${API_BASE}/api/self-improve/status').then(r=>r.json()).then(d=>{
         const p=d.performance||{};
         addMsg('a',`**Performance Stats:**\n\n• Total runs: ${p.total_runs||0}\n• Success rate: ${p.success_rate||'N/A'}\n• Avg duration: ${p.avg_duration||'N/A'}\n• Stage: ${p.evolution_stage||'Initial'}\n\nI'm continuously learning and improving my strategies.`);
         switchView('chat');
