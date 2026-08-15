@@ -20,7 +20,7 @@
         .glass{background:var(--glass);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);border:1px solid var(--glassb);box-shadow:0 8px 32px rgba(0,0,0,.05)}
         .glass-m{background:rgba(255,255,255,.75);backdrop-filter:blur(30px);-webkit-backdrop-filter:blur(30px);border:1px solid rgba(255,255,255,.5)}
         .dark-mode .glass-m{background:rgba(15,23,42,.85);border:1px solid rgba(255,255,255,.1)}
-        .app{width:100%;max-width:500px;height:100dvh;height:100vh;display:flex;flex-direction:column;position:relative;z-index:10}
+        .app{width:100%;max-width:500px;position:fixed;top:0;bottom:0;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;z-index:10}
         .content{flex:1;position:relative;overflow:hidden;display:flex;flex-direction:column}
         .pane{position:absolute;inset:0;display:flex;flex-direction:column;opacity:0;pointer-events:none;transition:opacity .3s}
         .pane.active{opacity:1;pointer-events:all}
