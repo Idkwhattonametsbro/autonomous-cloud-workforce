@@ -427,7 +427,11 @@ function handleAction(){
     if(m){
         addMsg('u',m);
         showTyping();
-        socket.emit('send_chat',{message:m});
+        // Use HTTP POST for reliability
+        fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:m})})
+            .then(r=>r.json())
+            .then(d=>{hideTyping();addMsg('a',d.response||d.error||'No response')})
+            .catch(e=>{hideTyping();addMsg('a','Connection error. Please try again.')});
         inp.value='';
         micIcon.className='fa-solid fa-microphone';
         micBtn.classList.remove('has-text');
